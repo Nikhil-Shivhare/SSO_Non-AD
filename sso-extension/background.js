@@ -15,7 +15,9 @@ const PRIMARY_IDENTITY_BASE = 'http://localhost:4000';
 let state = {
   pluginToken: null,
   expiresAt: null,
-  apps: []  // [{ appId, origin }]
+  apps: [],  // [{ appId, origin, loginSchema }]
+  currentUserId: null,
+  currentUsername: null
 };
 
 // =============================================================================
@@ -55,11 +57,31 @@ async function bootstrap() {
     }
     
     const data = await res.json();
+    
+    // USER SWITCH DETECTION: Check if the logged-in user has changed
+    if (state.currentUserId !== null && state.currentUserId !== data.userId) {
+      console.log('[SSO Background] User changed:', state.currentUsername, '->', data.username);
+      console.log('[SSO Background] Clearing state to prevent credential leakage');
+      
+      // Clear all state when user changes
+      state.pluginToken = null;
+      state.expiresAt = null;
+      state.apps = [];
+      state.currentUserId = null;
+      state.currentUsername = null;
+      
+      // Show notification about user change
+      console.log('[SSO Background] Previous user logged out. Please reload legacy apps.');
+    }
+    
+    // Update state with new user
     state.pluginToken = data.pluginToken;
     state.expiresAt = Date.now() + (data.expiresIn * 1000);
     state.apps = data.apps || [];
+    state.currentUserId = data.userId;
+    state.currentUsername = data.username;
     
-    console.log('[SSO Background] Bootstrapped:', state.apps.length, 'apps');
+    console.log('[SSO Background] Bootstrapped for', data.username, ':', state.apps.length, 'apps');
     return true;
   } catch (e) {
     console.log('[SSO Background] Bootstrap error:', e.message);
@@ -102,13 +124,12 @@ async function fetchCredentials(appId) {
 }
 
 /**
- * Save credentials after learning
+ * Save credentials after learning (extensible format)
  * @param {string} appId
- * @param {string} username
- * @param {string} password
+ * @param {{ username, password, ... }} fields
  * @returns {Promise<boolean>}
  */
-async function saveCredentials(appId, username, password) {
+async function saveCredentials(appId, fields) {
   if (!state.pluginToken) return false;
   
   try {
@@ -119,7 +140,7 @@ async function saveCredentials(appId, username, password) {
         'Content-Type': 'application/json'
       },
       credentials: 'include',
-      body: JSON.stringify({ appId, username, password })
+      body: JSON.stringify({ appId, fields })
     });
     
     console.log('[SSO Background] Save credentials:', res.ok ? 'success' : 'failed');
@@ -170,6 +191,16 @@ async function updatePassword(appId, newPassword) {
 function getAppIdByOrigin(origin) {
   const app = state.apps.find(a => a.origin === origin);
   return app ? app.appId : null;
+}
+
+/**
+ * Get loginSchema for origin
+ * @param {string} origin
+ * @returns {object|null}
+ */
+function getLoginSchemaByOrigin(origin) {
+  const app = state.apps.find(a => a.origin === origin);
+  return app ? app.loginSchema : null;
 }
 
 /**
@@ -248,11 +279,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // Step 4: Fetch credentials
         const creds = await fetchCredentials(appId);
         if (!creds) {
-          sendResponse({ success: false, needsLearning: true });
+          // No saved credentials - send loginSchema for learning mode
+          const loginSchema = getLoginSchemaByOrigin(origin);
+          sendResponse({ success: false, needsLearning: true, loginSchema: loginSchema });
           return;
         }
         
-        sendResponse({ success: true, credentials: creds });
+        // Include loginSchema with credentials for form filling
+        const loginSchema = getLoginSchemaByOrigin(origin);
+        sendResponse({ 
+          success: true, 
+          credentials: creds,
+          loginSchema: loginSchema
+        });
         break;
       }
       
@@ -269,7 +308,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           return;
         }
         
-        const saved = await saveCredentials(appId, request.username, request.password);
+        // Use fields format (extensible)
+        const fields = request.fields || { 
+          username: request.username, 
+          password: request.password 
+        };
+        const saved = await saveCredentials(appId, fields);
         sendResponse({ success: saved });
         break;
       }

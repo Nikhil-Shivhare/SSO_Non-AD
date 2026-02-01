@@ -19,13 +19,17 @@
   
   const currentOrigin = window.location.origin;
   const STORAGE_KEY = 'sso_learning_credentials';
+  const SCHEMA_KEY = 'sso_login_schema';
+  
+  // Store current loginSchema for learning mode
+  let currentLoginSchema = null;
   
   // ==========================================================================
   // SESSION STORAGE HELPERS (for learning mode persistence across navigation)
   // ==========================================================================
   
-  function saveLearningCredentials(username, password) {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ username, password, origin: currentOrigin }));
+  function saveLearningCredentials(fields) {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ fields, origin: currentOrigin }));
   }
   
   function getLearningCredentials() {
@@ -39,6 +43,24 @@
   
   function clearLearningCredentials() {
     sessionStorage.removeItem(STORAGE_KEY);
+  }
+  
+  function saveLoginSchema(schema) {
+    if (schema) {
+      sessionStorage.setItem(SCHEMA_KEY, JSON.stringify({ schema, origin: currentOrigin }));
+    }
+  }
+  
+  function getLoginSchema() {
+    const data = sessionStorage.getItem(SCHEMA_KEY);
+    if (!data) return null;
+    const parsed = JSON.parse(data);
+    if (parsed.origin === currentOrigin) return parsed.schema;
+    return null;
+  }
+  
+  function clearLoginSchema() {
+    sessionStorage.removeItem(SCHEMA_KEY);
   }
   
   // ==========================================================================
@@ -88,8 +110,56 @@
   // ==========================================================================
   
   /**
-   * Fill login form with credentials
-   * @param {{ username, password }} credentials
+   * Schema-driven form filling
+   * Iterates over loginSchema and fills each field from credential fields
+   * @param {object} loginSchema - { fieldName: { selector, type } }
+   * @param {object} fields - { fieldName: value }
+   */
+  function fillLoginFormWithSchema(loginSchema, fields) {
+    if (!loginSchema || !fields) {
+      Utils.log('Cannot fill - missing schema or fields');
+      return false;
+    }
+    
+    let filledCount = 0;
+    
+    for (const [fieldName, fieldConfig] of Object.entries(loginSchema)) {
+      const { selector, type } = fieldConfig;
+      const value = fields[fieldName];
+      
+      if (!value) {
+        Utils.log(`Skipping field ${fieldName} - no value`);
+        continue;
+      }
+      
+      const element = document.querySelector(selector);
+      if (!element) {
+        Utils.log(`Field ${fieldName} not found with selector: ${selector}`);
+        continue;
+      }
+      
+      // Set value
+      element.value = value;
+      
+      // Dispatch appropriate event based on field type
+      if (type === 'select') {
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      
+      Utils.log(`Filled ${fieldName} (${type})`);
+      filledCount++;
+    }
+    
+    Utils.log(`Form filled: ${filledCount} fields`);
+    return filledCount > 0;
+  }
+  
+  /**
+   * Legacy form filling (fallback when no schema)
+   * @param {{ username, password } | { fields: { username, password } }} credentials
    */
   function fillLoginForm(credentials) {
     const formData = findLoginForm();
@@ -100,17 +170,21 @@
     
     const { usernameInput, passwordInput } = formData;
     
+    // Support both legacy format and new fields format
+    const username = credentials.fields ? credentials.fields.username : credentials.username;
+    const password = credentials.fields ? credentials.fields.password : credentials.password;
+    
     // Fill username
-    usernameInput.value = credentials.username;
+    usernameInput.value = username;
     usernameInput.dispatchEvent(new Event('input', { bubbles: true }));
     usernameInput.dispatchEvent(new Event('change', { bubbles: true }));
     
     // Fill password
-    passwordInput.value = credentials.password;
+    passwordInput.value = password;
     passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
     passwordInput.dispatchEvent(new Event('change', { bubbles: true }));
     
-    Utils.log('Form filled');
+    Utils.log('Form filled (legacy mode)');
     return true;
   }
   
@@ -143,9 +217,17 @@
   
   /**
    * Enter learning mode - watch for manual login
+   * Captures ALL fields defined in loginSchema
+   * @param {object} loginSchema - Optional schema for capturing extra fields
    */
-  function enterLearningMode() {
+  function enterLearningMode(loginSchema) {
     Utils.log('Learning mode: watching for manual login');
+    
+    // Store schema for post-login processing
+    currentLoginSchema = loginSchema || getLoginSchema();
+    if (loginSchema) {
+      saveLoginSchema(loginSchema);
+    }
     
     // CASE 2: First-time login notification
     Utils.showNotification('First-Time Login', 'No saved credentials found. Please log in manually.');
@@ -153,19 +235,46 @@
     const formData = findLoginForm();
     if (!formData) return;
     
-    const { form, usernameInput, passwordInput } = formData;
+    const { form } = formData;
     
-    // Capture credentials before form submission and save to sessionStorage
+    // Capture credentials before form submission
     if (form) {
       form.addEventListener('submit', () => {
-        const username = usernameInput.value;
-        const password = passwordInput.value;
-        if (username && password) {
-          saveLearningCredentials(username, password);
-          Utils.log('Learning mode: captured credentials for', username);
+        const capturedFields = captureFormFields(currentLoginSchema);
+        if (capturedFields && capturedFields.username && capturedFields.password) {
+          saveLearningCredentials(capturedFields);
+          Utils.log('Learning mode: captured fields', Object.keys(capturedFields));
         }
       });
     }
+  }
+  
+  /**
+   * Capture all form fields based on schema
+   * @param {object} loginSchema
+   * @returns {object} fields
+   */
+  function captureFormFields(loginSchema) {
+    const fields = {};
+    
+    if (loginSchema) {
+      // Schema-driven capture
+      for (const [fieldName, fieldConfig] of Object.entries(loginSchema)) {
+        const element = document.querySelector(fieldConfig.selector);
+        if (element && element.value) {
+          fields[fieldName] = element.value;
+        }
+      }
+    } else {
+      // Fallback: capture username and password
+      const formData = findLoginForm();
+      if (formData) {
+        fields.username = formData.usernameInput.value;
+        fields.password = formData.passwordInput.value;
+      }
+    }
+    
+    return fields;
   }
   
   /**
@@ -173,14 +282,15 @@
    */
   function checkLearningSuccess() {
     // Check if we have captured credentials from previous page
-    const capturedCredentials = getLearningCredentials();
-    if (!capturedCredentials) return;
+    const capturedData = getLearningCredentials();
+    if (!capturedData) return;
     
     // Simple heuristic: if we're no longer on a login page, assume success
     const formData = findLoginForm();
     if (formData) {
       // Still on login page - not successful yet, clear stored credentials
       clearLearningCredentials();
+      clearLoginSchema();
       return;
     }
     
@@ -191,8 +301,7 @@
       chrome.runtime.sendMessage({
         action: 'saveCredentials',
         origin: currentOrigin,
-        username: capturedCredentials.username,
-        password: capturedCredentials.password
+        fields: capturedData.fields
       }, (response) => {
         if (response && response.success) {
           // CASE 4: Credentials saved notification
@@ -206,6 +315,7 @@
     
     // Clear storage after handling
     clearLearningCredentials();
+    clearLoginSchema();
   }
   
   // ==========================================================================
@@ -342,7 +452,7 @@
       if (!response.success) {
         if (response.needsLearning) {
           Utils.log('No credentials stored - entering learning mode');
-          enterLearningMode();
+          enterLearningMode(response.loginSchema);
         } else {
           Utils.log('Cannot proceed:', response.error);
         }
@@ -371,7 +481,7 @@
         // User wants to update credentials - enter learning mode
         Utils.log('User chose to update credentials');
         Utils.showNotification('Update Mode', 'Please enter your new credentials. They will be saved after successful login.');
-        enterLearningMode();
+        enterLearningMode(response.loginSchema);
         return;
       }
       
@@ -381,7 +491,14 @@
       
       await Utils.sleep(500);
       
-      const filled = fillLoginForm(response.credentials);
+      // Use schema-driven filling if available, otherwise fallback
+      let filled = false;
+      if (response.loginSchema && response.credentials.fields) {
+        filled = fillLoginFormWithSchema(response.loginSchema, response.credentials.fields);
+      } else {
+        filled = fillLoginForm(response.credentials);
+      }
+      
       if (filled) {
         await Utils.sleep(500);
         submitLoginForm();

@@ -27,76 +27,121 @@ Server runs at: **http://localhost:4000**
 - Vault credential storage
 - Token introspection
 
-## API Endpoints
+## API Reference
 
-### Session
+### Complete API Table
 
-| Method | Endpoint              | Description   |
-| ------ | --------------------- | ------------- |
-| GET    | `/login`              | Login page    |
-| POST   | `/login`              | Authenticate  |
-| GET    | `/logout`             | Logout        |
-| GET    | `/api/session/status` | Check session |
+| Method             | Endpoint                         | Auth                 | Interacts With | Description                                                              |
+| ------------------ | -------------------------------- | -------------------- | -------------- | ------------------------------------------------------------------------ |
+| **Session & Auth** |                                  |                      |                |                                                                          |
+| GET                | `/login`                         | None                 | Browser        | Displays login page                                                      |
+| POST               | `/login`                         | None                 | Browser → DB   | Authenticates user, creates session                                      |
+| GET                | `/logout`                        | Session              | Browser        | Destroys session, redirects to login                                     |
+| GET                | `/api/session/status`            | Session Cookie       | Extension      | Returns `{active: true/false}` for session check                         |
+| **Extension APIs** |                                  |                      |                |                                                                          |
+| POST               | `/api/plugin/bootstrap`          | Session Cookie       | Extension → DB | Returns `pluginToken`, `userId`, `username`, `apps[]` with `loginSchema` |
+| POST               | `/api/token/introspect`          | None (token in body) | Extension      | Validates pluginToken, returns user info and scopes                      |
+| **Vault APIs**     |                                  |                      |                |                                                                          |
+| GET                | `/api/vault/credentials?appId=X` | Bearer Token         | Extension → DB | Returns `{fields: {username, password, role?}}`                          |
+| POST               | `/api/vault/credentials`         | Bearer Token         | Extension → DB | Saves credentials with `{appId, fields: {...}}`                          |
+| PUT                | `/api/vault/password`            | Bearer Token         | Extension → DB | Updates only password, preserves other fields                            |
+| **Admin APIs**     |                                  |                      |                |                                                                          |
+| GET                | `/admin`                         | Session (Admin)      | Browser        | Admin panel page                                                         |
+| POST               | `/admin/users`                   | Session (Admin)      | Browser → DB   | Create new user                                                          |
+| POST               | `/admin/users/:id/delete`        | Session (Admin)      | Browser → DB   | Delete user                                                              |
+| POST               | `/admin/assign-app`              | Session (Admin)      | Browser → DB   | Assign app to user                                                       |
+| POST               | `/admin/remove-app`              | Session (Admin)      | Browser → DB   | Remove app from user                                                     |
+| **Pages**          |                                  |                      |                |                                                                          |
+| GET                | `/`                              | None                 | Browser        | Redirects to dashboard or login                                          |
+| GET                | `/dashboard`                     | Session              | Browser        | User dashboard with assigned apps                                        |
 
-### Extension Bootstrap
+### Authentication Types
+
+| Type               | Description                     | Used By                |
+| ------------------ | ------------------------------- | ---------------------- |
+| **Session Cookie** | `PID_SESSION` HTTP-only cookie  | Browser, Admin Panel   |
+| **Bearer Token**   | `Authorization: Bearer ptk_xxx` | Extension Vault APIs   |
+| **None**           | Public endpoint                 | Login page, Introspect |
+
+### Extension Bootstrap Flow
 
 ```bash
-# Get plugin token and allowed apps
+# 1. Bootstrap - Get token and app schemas
 curl -X POST http://localhost:4000/api/plugin/bootstrap \
   -H "Cookie: PID_SESSION=<session_cookie>"
 ```
 
-Response:
+**Response:**
 
 ```json
 {
   "pluginToken": "ptk_xxx",
   "expiresIn": 3600,
-  "apps": [{ "appId": "app_a", "origin": "http://localhost:3001" }]
+  "userId": 2,
+  "username": "testuser",
+  "apps": [
+    {
+      "appId": "app_d",
+      "origin": "http://localhost:3004",
+      "loginSchema": {
+        "username": { "selector": "input[name='username']", "type": "text" },
+        "password": {
+          "selector": "input[name='password']",
+          "type": "password"
+        },
+        "role": { "selector": "select[name='role']", "type": "select" }
+      }
+    }
+  ]
 }
 ```
 
-### Token Introspection
+### Vault Credential APIs
 
 ```bash
-curl -X POST http://localhost:4000/api/token/introspect \
-  -H "Content-Type: application/json" \
-  -d '{"pluginToken": "ptk_xxx"}'
+# Get credentials (with extra fields like role)
+curl http://localhost:4000/api/vault/credentials?appId=app_d \
+  -H "Authorization: Bearer ptk_xxx"
 ```
 
-### Vault Credentials
+**Response:**
+
+```json
+{
+  "appId": "app_d",
+  "fields": {
+    "username": "nikhil",
+    "password": "secret",
+    "role": "admin"
+  }
+}
+```
 
 ```bash
-# Get credentials
-curl http://localhost:4000/api/vault/credentials?appId=app_a \
-  -H "Authorization: Bearer ptk_xxx"
-
-# Save credentials
+# Save credentials (with extra fields)
 curl -X POST http://localhost:4000/api/vault/credentials \
   -H "Authorization: Bearer ptk_xxx" \
   -H "Content-Type: application/json" \
-  -d '{"appId": "app_a", "username": "user", "password": "pass"}'
+  -d '{"appId": "app_d", "fields": {"username": "user", "password": "pass", "role": "intern"}}'
+
+# Update password only (preserves role)
+curl -X PUT http://localhost:4000/api/vault/password \
+  -H "Authorization: Bearer ptk_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{"appId": "app_d", "newPassword": "newpass"}'
 ```
-
-## Extension Integration Flow
-
-1. User logs in at `http://localhost:4000/login`
-2. Extension calls `POST /api/plugin/bootstrap` with session cookie
-3. Server returns `pluginToken` + list of allowed apps
-4. Extension stores token and uses it to fetch credentials
-5. Extension auto-fills legacy app login forms
 
 ## Database
 
 SQLite database stored as `database.sqlite`. Auto-created on first run.
 
-Tables:
-
-- `users` - Primary identity users
-- `apps` - Registered legacy apps
-- `user_apps` - User ↔ App mapping
-- `plugin_tokens` - Extension tokens
-- `vault_credentials` - Per-user app credentials
+| Table               | Description                                                             |
+| ------------------- | ----------------------------------------------------------------------- |
+| `users`             | Primary Identity users (id, username, password_hash, role)              |
+| `apps`              | Registered apps (id, appId, origin, **login_schema**)                   |
+| `user_apps`         | User ↔ App access control                                               |
+| `plugin_tokens`     | Extension tokens (token, user_id, scopes, expires_at)                   |
+| `vault_credentials` | Per-user app credentials (app_username, app_password, **extra_fields**) |
 
 ## Security Notes (PoC Only)
 

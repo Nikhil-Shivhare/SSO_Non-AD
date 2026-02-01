@@ -53,7 +53,8 @@ async function initDatabase() {
         CREATE TABLE IF NOT EXISTS apps (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             appId TEXT UNIQUE NOT NULL,
-            origin TEXT NOT NULL
+            origin TEXT NOT NULL,
+            login_schema TEXT DEFAULT NULL
         );
 
         -- User ↔ App mapping
@@ -82,6 +83,7 @@ async function initDatabase() {
             app_id INTEGER,
             app_username TEXT NOT NULL,
             app_password TEXT NOT NULL,
+            extra_fields TEXT DEFAULT NULL,
             PRIMARY KEY (user_id, app_id),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
@@ -115,11 +117,25 @@ function seedDatabase() {
 
     console.log('[DB] Seeding database...');
 
-    // Seed apps
-    db.run('INSERT OR IGNORE INTO apps (appId, origin) VALUES (?, ?)', ['app_a', 'http://localhost:3001']);
-    db.run('INSERT OR IGNORE INTO apps (appId, origin) VALUES (?, ?)', ['app_b', 'http://localhost:3002']);
-    db.run('INSERT OR IGNORE INTO apps (appId, origin) VALUES (?, ?)', ['app_c', 'http://localhost:3003']);
-    console.log('[DB] Seeded 3 apps');
+    // Default login schema (username + password)
+    const defaultSchema = JSON.stringify({
+        username: { selector: "input[name='username']", type: 'text' },
+        password: { selector: "input[name='password']", type: 'password' }
+    });
+    
+    // Role-based login schema (App-D)
+    const roleSchema = JSON.stringify({
+        username: { selector: "input[name='username']", type: 'text' },
+        password: { selector: "input[name='password']", type: 'password' },
+        role: { selector: "select[name='role']", type: 'select' }
+    });
+
+    // Seed apps with login schemas
+    db.run('INSERT OR IGNORE INTO apps (appId, origin, login_schema) VALUES (?, ?, ?)', ['app_a', 'http://localhost:3001', defaultSchema]);
+    db.run('INSERT OR IGNORE INTO apps (appId, origin, login_schema) VALUES (?, ?, ?)', ['app_b', 'http://localhost:3002', defaultSchema]);
+    db.run('INSERT OR IGNORE INTO apps (appId, origin, login_schema) VALUES (?, ?, ?)', ['app_c', 'http://localhost:3003', defaultSchema]);
+    db.run('INSERT OR IGNORE INTO apps (appId, origin, login_schema) VALUES (?, ?, ?)', ['app_d', 'http://localhost:3004', roleSchema]);
+    console.log('[DB] Seeded 4 apps (including App-D with role schema)');
 
     // Seed users
     const adminHash = bcrypt.hashSync('admin123', SALT_ROUNDS);
@@ -323,24 +339,92 @@ function revokeUserTokens(userId) {
 // VAULT CREDENTIAL FUNCTIONS
 // ============================================================================
 
+/**
+ * Get vault credentials in extensible format
+ * @returns {{ fields: { username, password, ... } } | null}
+ */
 function getVaultCredentials(userId, appId) {
     const app = queryOne('SELECT id FROM apps WHERE appId = ?', [appId]);
     if (!app) return null;
     
-    return queryOne('SELECT app_username, app_password FROM vault_credentials WHERE user_id = ? AND app_id = ?',
+    const row = queryOne('SELECT app_username, app_password, extra_fields FROM vault_credentials WHERE user_id = ? AND app_id = ?',
         [userId, app.id]);
+    
+    if (!row) return null;
+    
+    // Build extensible fields format
+    const fields = {
+        username: row.app_username,
+        password: row.app_password
+    };
+    
+    // Merge extra fields if present
+    if (row.extra_fields) {
+        try {
+            const extra = JSON.parse(row.extra_fields);
+            Object.assign(fields, extra);
+        } catch (e) {
+            console.log('[DB] Error parsing extra_fields:', e.message);
+        }
+    }
+    
+    return { fields };
 }
 
-function saveVaultCredentials(userId, appId, appUsername, appPassword) {
+/**
+ * Save vault credentials (extensible format)
+ * @param {number} userId
+ * @param {string} appId
+ * @param {{ username, password, ... }} fields - Credential fields
+ */
+function saveVaultCredentials(userId, appId, fields) {
     const app = queryOne('SELECT id FROM apps WHERE appId = ?', [appId]);
     if (!app) return { success: false, error: 'App not found' };
     
+    // Extract core fields and extra fields
+    const { username, password, ...extraFields } = fields;
+    
+    if (!username || !password) {
+        return { success: false, error: 'username and password are required' };
+    }
+    
+    const extraFieldsJson = Object.keys(extraFields).length > 0 
+        ? JSON.stringify(extraFields) 
+        : null;
+    
     // Delete existing and insert new
     run('DELETE FROM vault_credentials WHERE user_id = ? AND app_id = ?', [userId, app.id]);
-    run('INSERT INTO vault_credentials (user_id, app_id, app_username, app_password) VALUES (?, ?, ?, ?)',
-        [userId, app.id, appUsername, appPassword]);
+    run('INSERT INTO vault_credentials (user_id, app_id, app_username, app_password, extra_fields) VALUES (?, ?, ?, ?, ?)',
+        [userId, app.id, username, password, extraFieldsJson]);
     
     return { success: true };
+}
+
+/**
+ * Update only the password field (for password change)
+ */
+function updateVaultPassword(userId, appId, newPassword) {
+    const existing = getVaultCredentials(userId, appId);
+    if (!existing) return { success: false, error: 'No credentials found' };
+    
+    // Update only password, keep other fields
+    const updatedFields = { ...existing.fields, password: newPassword };
+    return saveVaultCredentials(userId, appId, updatedFields);
+}
+
+/**
+ * Get app with login schema
+ */
+function getAppWithSchema(appId) {
+    const app = queryOne('SELECT * FROM apps WHERE appId = ?', [appId]);
+    if (!app) return null;
+    
+    return {
+        id: app.id,
+        appId: app.appId,
+        origin: app.origin,
+        loginSchema: app.login_schema ? JSON.parse(app.login_schema) : null
+    };
 }
 
 // ============================================================================
@@ -373,5 +457,7 @@ module.exports = {
     
     // Vault functions
     getVaultCredentials,
-    saveVaultCredentials
+    saveVaultCredentials,
+    updateVaultPassword,
+    getAppWithSchema
 };

@@ -408,18 +408,24 @@ app.post('/api/plugin/bootstrap', requireAuth, (req, res) => {
     // Generate plugin token
     const { token, expiresIn } = db.generatePluginToken(userId);
     
-    // Get user's allowed apps
+    // Get user's allowed apps with login schemas
     const userApps = db.getUserApps(userId);
-    const apps = userApps.map(app => ({
-        appId: app.appId,
-        origin: app.origin
-    }));
+    const apps = userApps.map(app => {
+        const appWithSchema = db.getAppWithSchema(app.appId);
+        return {
+            appId: app.appId,
+            origin: app.origin,
+            loginSchema: appWithSchema ? appWithSchema.loginSchema : null
+        };
+    });
     
     console.log(`[BOOTSTRAP] Generated pluginToken for ${username}, apps: ${apps.map(a => a.appId).join(', ')}`);
     
     res.json({
         pluginToken: token,
         expiresIn: expiresIn,
+        userId: userId,
+        username: username,
         apps: apps
     });
 });
@@ -471,20 +477,30 @@ app.get('/api/vault/credentials', requireBearerToken, (req, res) => {
     
     console.log(`[VAULT] Returned credentials for ${req.tokenData.username} -> ${appId}`);
     
+    // Return extensible fields format
     res.json({
         appId: appId,
-        username: credentials.app_username,
-        password: credentials.app_password
+        fields: credentials.fields
     });
 });
 
 // POST /api/vault/credentials
 app.post('/api/vault/credentials', requireBearerToken, (req, res) => {
-    const { appId, username, password } = req.body;
+    const { appId, fields } = req.body;
     const userId = req.tokenData.userId;
     
-    if (!appId || !username || !password) {
-        return res.status(400).json({ error: 'appId, username, and password are required' });
+    // Support both old format (username, password) and new format (fields)
+    let credentialFields = fields;
+    if (!fields && req.body.username && req.body.password) {
+        // Backward compatibility: convert old format
+        credentialFields = {
+            username: req.body.username,
+            password: req.body.password
+        };
+    }
+    
+    if (!appId || !credentialFields || !credentialFields.username || !credentialFields.password) {
+        return res.status(400).json({ error: 'appId and fields (with username, password) are required' });
     }
     
     // Check if user is allowed to access this app
@@ -498,7 +514,7 @@ app.post('/api/vault/credentials', requireBearerToken, (req, res) => {
     }
     
     // Save credentials
-    const result = db.saveVaultCredentials(userId, appId, username, password);
+    const result = db.saveVaultCredentials(userId, appId, credentialFields);
     
     if (!result.success) {
         return res.status(400).json({ error: result.error });
@@ -528,14 +544,8 @@ app.put('/api/vault/password', requireBearerToken, (req, res) => {
         return res.status(403).json({ error: 'Token does not have vault:write scope' });
     }
     
-    // Get existing credentials
-    const existing = db.getVaultCredentials(userId, appId);
-    if (!existing) {
-        return res.status(404).json({ error: 'No credentials found for this app' });
-    }
-    
-    // Update with same username but new password
-    const result = db.saveVaultCredentials(userId, appId, existing.app_username, newPassword);
+    // Use new updateVaultPassword function (preserves other fields)
+    const result = db.updateVaultPassword(userId, appId, newPassword);
     
     if (!result.success) {
         return res.status(400).json({ error: result.error });
