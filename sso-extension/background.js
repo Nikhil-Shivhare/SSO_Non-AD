@@ -17,7 +17,8 @@ let state = {
   expiresAt: null,
   apps: [],  // [{ appId, origin, loginSchema }]
   currentUserId: null,
-  currentUsername: null
+  currentUsername: null,
+  loggedInApps: new Set()  // Track origins where SSO filled credentials
 };
 
 // =============================================================================
@@ -70,8 +71,8 @@ async function bootstrap() {
       state.currentUserId = null;
       state.currentUsername = null;
       
-      // Show notification about user change
-      console.log('[SSO Background] Previous user logged out. Please reload legacy apps.');
+      // CASCADE LOGOUT: Log out from all apps where previous user was logged in
+      await cascadeLogout();
     }
     
     // Update state with new user
@@ -87,6 +88,39 @@ async function bootstrap() {
     console.log('[SSO Background] Bootstrap error:', e.message);
     return false;
   }
+}
+
+/**
+ * CASCADE LOGOUT: Log out from all legacy apps where SSO filled credentials
+ * Called when Primary Identity user changes
+ */
+async function cascadeLogout() {
+  if (state.loggedInApps.size === 0) {
+    console.log('[SSO Background] No apps to cascade logout');
+    return;
+  }
+  
+  console.log('[SSO Background] CASCADE LOGOUT for apps:', [...state.loggedInApps]);
+  
+  for (const origin of state.loggedInApps) {
+    const logoutUrl = `${origin}/logout`;
+    try {
+      // Open logout URL in background tab
+      const tab = await chrome.tabs.create({ url: logoutUrl, active: false });
+      console.log('[SSO Background] Logging out from:', origin);
+      
+      // Close tab after short delay (give app time to process logout)
+      setTimeout(() => {
+        chrome.tabs.remove(tab.id).catch(() => {});
+      }, 2000);
+    } catch (e) {
+      console.log('[SSO Background] Failed to logout from', origin, e.message);
+    }
+  }
+  
+  // Clear the set after cascade logout
+  state.loggedInApps.clear();
+  console.log('[SSO Background] Cascade logout complete');
 }
 
 /**
@@ -222,6 +256,7 @@ function isTokenValid() {
 
 /**
  * Ensure we have a valid session and bootstrap
+ * IMPORTANT: Always calls bootstrap() to detect user changes
  * @returns {Promise<boolean>}
  */
 async function ensureReady() {
@@ -230,15 +265,16 @@ async function ensureReady() {
   if (!isLoggedIn) {
     state.pluginToken = null;
     state.apps = [];
+    state.currentUserId = null;
+    state.currentUsername = null;
     console.log('[SSO Background] Not logged in - disabled');
     return false;
   }
   
-  // Bootstrap if needed
-  if (!isTokenValid()) {
-    const success = await bootstrap();
-    if (!success) return false;
-  }
+  // ALWAYS call bootstrap to detect user changes
+  // Even if token is valid, the logged-in user might have changed!
+  const success = await bootstrap();
+  if (!success) return false;
   
   return true;
 }
@@ -287,6 +323,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
         // Include loginSchema with credentials for form filling
         const loginSchema = getLoginSchemaByOrigin(origin);
+        
+        // TRACK: Add this origin to logged-in apps for cascade logout
+        state.loggedInApps.add(origin);
+        console.log('[SSO Background] Tracking SSO-filled app:', origin);
+        
         sendResponse({ 
           success: true, 
           credentials: creds,

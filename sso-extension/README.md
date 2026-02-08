@@ -49,8 +49,54 @@ When a different user logs into Primary Identity:
 
 1. Bootstrap compares `userId` from API with `state.currentUserId`
 2. If different → **clears all state** (token, apps, user info)
-3. Logs: `"User changed: userA -> userB, clearing state"`
-4. Prevents credential leakage between users
+3. **Cascade Logout**: Logs out from all apps where SSO happened
+4. Logs: `"User changed: userA -> userB, clearing state"`
+5. Prevents credential leakage between users
+
+### Cascade Logout (New!)
+
+When user changes in Primary Identity, the extension automatically logs out from all legacy apps:
+
+| Step | Action                                                            |
+| ---- | ----------------------------------------------------------------- |
+| 1    | User A logs in → visits App-1, App-2 (SSO fills credentials)      |
+| 2    | Extension tracks: `loggedInApps = [App-1, App-2]`                 |
+| 3    | User B logs into Primary Identity                                 |
+| 4    | Extension detects user change                                     |
+| 5    | Extension opens `App-1/logout`, `App-2/logout` in background tabs |
+| 6    | All User A sessions terminated!                                   |
+
+**Key Function**: `cascadeLogout()` in `background.js`
+
+---
+
+## Smart Auto-Login (Silent Mode)
+
+The extension tries to login **silently** first. Options dialog is shown **only when login fails**.
+
+```
+Page loads → Login form detected
+              ↓
+      ┌─ Credentials found? ─┐
+      │                      │
+      No                    Yes
+      ↓                      ↓
+  Learning Mode       Try SILENT auto-login
+                             ↓
+                     ┌─ Success? ─┐
+                     │            │
+                    Yes          No
+                     ↓            ↓
+               Navigate away   Show options:
+                               1 = Retry
+                               2 = Manual
+                               3 = Update
+```
+
+| Scenario            | Behavior                        |
+| ------------------- | ------------------------------- |
+| Credentials correct | Auto-login silently (no prompt) |
+| Credentials wrong   | Show options dialog             |
 
 ---
 
@@ -151,6 +197,7 @@ Content Script                    Background Script
 1. **Bootstrap** returns `loginSchema` per app
 2. Content script calls `fillLoginFormWithSchema(schema, fields)`
 3. Function iterates over schema keys:
+
    ```javascript
    for (const [fieldName, fieldDef] of Object.entries(schema)) {
      const element = document.querySelector(fieldDef.selector);
@@ -277,3 +324,5 @@ Configured in `manifest.json`:
 - MFA handling
 - Keycloak integration
 - Token refresh scheduling
+  
+  

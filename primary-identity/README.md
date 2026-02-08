@@ -150,3 +150,11 @@ SQLite database stored as `database.sqlite`. Auto-created on first run.
 - pluginToken is a random string
 - In production: use JWT with signing
 - This component can be replaced with **Keycloak**
+
+## View All Credentials (SQL)
+
+```bash
+sqlite3 database.sqlite "SELECT u.username, vc.app_id, vc.app_username, vc.app_password, vc.extra_fields FROM vault_credentials vc JOIN users u ON vc.user_id = u.id;"
+```
+
+ sqlite3 database.sqlite "SELECT * FROM vault_credentials;"

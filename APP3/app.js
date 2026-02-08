@@ -179,7 +179,7 @@ app.post("/login", (req, res) => {
           messagePage("Login Failed", "Invalid username or password.", true),
         );
       }
-      // Return dashboard directly (no session)
+      // Return dashboard directly (stateless - no session)
       res.send(dashboardPage(username));
     });
   });

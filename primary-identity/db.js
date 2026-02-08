@@ -236,7 +236,14 @@ function deleteUser(id) {
     if (user && user.role === 'admin') {
         return { success: false, error: 'Cannot delete admin users' };
     }
+    
+    // Cascade delete: remove all related data for this user
+    run('DELETE FROM vault_credentials WHERE user_id = ?', [id]);
+    run('DELETE FROM user_apps WHERE user_id = ?', [id]);
+    run('DELETE FROM plugin_tokens WHERE user_id = ?', [id]);
     run('DELETE FROM users WHERE id = ?', [id]);
+    
+    console.log(`[DB] Deleted user ${id} and all related credentials`);
     return { success: true };
 }
 

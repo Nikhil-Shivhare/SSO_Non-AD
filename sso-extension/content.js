@@ -218,6 +218,7 @@
   /**
    * Enter learning mode - watch for manual login
    * Captures ALL fields defined in loginSchema
+   * Handles both navigating apps and stateless apps (that return HTML without navigation)
    * @param {object} loginSchema - Optional schema for capturing extra fields
    */
   function enterLearningMode(loginSchema) {
@@ -244,8 +245,55 @@
         if (capturedFields && capturedFields.username && capturedFields.password) {
           saveLearningCredentials(capturedFields);
           Utils.log('Learning mode: captured fields', Object.keys(capturedFields));
+          
+          // For stateless apps: Watch for DOM changes after submission
+          // (The form might be replaced with dashboard content without page navigation)
+          setTimeout(() => {
+            watchForLoginSuccess();
+          }, 1000);
         }
       });
+    }
+  }
+  
+  /**
+   * Watch for login success in stateless apps (no page navigation)
+   * Checks if login form has disappeared after submission
+   */
+  function watchForLoginSuccess() {
+    const capturedData = getLearningCredentials();
+    if (!capturedData) return;
+    
+    // Check if login form is gone (means we're now on dashboard)
+    const formData = findLoginForm();
+    if (!formData) {
+      Utils.log('Learning mode: login form disappeared - assuming success (stateless app)');
+      
+      // CASE 3: Ask user consent to save
+      if (Utils.askConsent('Login successful. Save credentials for future automatic login?')) {
+        chrome.runtime.sendMessage({
+          action: 'saveCredentials',
+          origin: currentOrigin,
+          fields: capturedData.fields
+        }, (response) => {
+          if (response && response.success) {
+            // CASE 4: Credentials saved notification
+            Utils.showNotification('Credentials Saved', 'SSO is now enabled for this application.');
+            Utils.log('Credentials saved (stateless app)');
+          } else {
+            Utils.log('Failed to save credentials:', response ? response.error : 'No response');
+          }
+        });
+      }
+      
+      // Clear storage after handling
+      clearLearningCredentials();
+      clearLoginSchema();
+    } else {
+      // Form still present - login might have failed, clear stored credentials
+      Utils.log('Learning mode: form still present - login may have failed');
+      clearLearningCredentials();
+      clearLoginSchema();
     }
   }
   
@@ -316,6 +364,8 @@
     // Clear storage after handling
     clearLearningCredentials();
     clearLoginSchema();
+    // Clear auto-login attempt flag (credentials updated, next attempt should try silently)
+    sessionStorage.removeItem('sso_auto_login_attempted');
   }
   
   // ==========================================================================
@@ -364,48 +414,170 @@
     
     const { form, newPassword } = formData;
     
-    form.addEventListener('submit', () => {
+    form.addEventListener('submit', async (e) => {
       const newPwd = newPassword.value;
       if (newPwd) {
         savePasswordChangeData(newPwd);
         Utils.log('Password change: captured new password');
+        
+        // Wait for form submission and check for success message
+        await Utils.sleep(1000); // Give server time to respond
+        
+        // Watch for success message appearing on the page
+        watchForPasswordChangeSuccess(newPwd);
       }
     });
   }
   
   /**
-   * Check if password change was successful (called after page navigation)
+   * Watch for password change success message and auto-update vault
+   */
+  function watchForPasswordChangeSuccess(newPassword) {
+    Utils.log('Watching for password change success...');
+    
+    let checkCount = 0;
+    const maxChecks = 10; // Check for 5 seconds total
+    
+    const checkInterval = setInterval(() => {
+      checkCount++;
+      
+      // Check for success message
+      const hasSuccess = checkForSuccessMessage();
+      
+      if (hasSuccess) {
+        clearInterval(checkInterval);
+        Utils.log('Password change success detected!');
+        
+        // Update vault automatically
+        chrome.runtime.sendMessage({
+          action: 'updatePassword',
+          origin: currentOrigin,
+          newPassword: newPassword
+        }, (response) => {
+          if (response && response.success) {
+            Utils.showNotification('Password Updated', 'Your new password has been saved to the vault.');
+            Utils.log('Password updated in vault');
+          } else {
+            Utils.log('Failed to update password:', response ? response.error : 'No response');
+          }
+        });
+        
+        clearPasswordChangeData();
+      } else if (checkCount >= maxChecks) {
+        clearInterval(checkInterval);
+        Utils.log('Password change: no success message detected after timeout');
+      }
+    }, 500);
+  }
+  
+  /**
+   * Check if success message exists on page
+   */
+  function checkForSuccessMessage() {
+    // Check common success class patterns
+    const successElements = document.querySelectorAll('.success, .alert-success, .message-success');
+    for (const el of successElements) {
+      if (el.textContent && el.textContent.toLowerCase().includes('success')) {
+        return true;
+      }
+    }
+    
+    // Also check for text content directly
+    const bodyText = document.body.innerText.toLowerCase();
+    if (bodyText.includes('password changed successfully') || 
+        bodyText.includes('password updated successfully')) {
+      return true;
+    }
+    
+    return false;
+  }
+  
+  /**
+   * Check if password change was successful (called after page navigation/reload)
    */
   function checkPasswordChangeSuccess() {
     const data = getPasswordChangeData();
     if (!data) return;
     
-    // If we're still on a password change page, the change might have failed
-    if (findPasswordChangeForm()) {
-      Utils.log('Password change: still on change page, might have failed');
+    // Check for success indicators on the page
+    // Apps typically show a success message after password change
+    const successIndicators = [
+      '.success',
+      '.alert-success', 
+      '[class*="success"]',
+      ':contains("Password changed")',
+      ':contains("successfully")'
+    ];
+    
+    // Check if page contains success message
+    let hasSuccessMessage = false;
+    
+    // Check common success class patterns
+    const successElements = document.querySelectorAll('.success, .alert-success, .message-success');
+    for (const el of successElements) {
+      if (el.textContent && el.textContent.toLowerCase().includes('success')) {
+        hasSuccessMessage = true;
+        break;
+      }
+    }
+    
+    // Also check for text content directly
+    if (!hasSuccessMessage) {
+      const bodyText = document.body.innerText.toLowerCase();
+      if (bodyText.includes('password changed successfully') || 
+          bodyText.includes('password updated successfully')) {
+        hasSuccessMessage = true;
+      }
+    }
+    
+    if (hasSuccessMessage) {
+      Utils.log('Password change: success message detected, updating vault');
+      
+      if (Utils.askConsent('Password change successful. Update saved credentials with new password?')) {
+        chrome.runtime.sendMessage({
+          action: 'updatePassword',
+          origin: currentOrigin,
+          newPassword: data.newPassword
+        }, (response) => {
+          if (response && response.success) {
+            Utils.showNotification('Password Updated', 'Your new password has been saved to the vault.');
+            Utils.log('Password updated in vault');
+          } else {
+            Utils.log('Failed to update password:', response ? response.error : 'No response');
+          }
+        });
+      }
+      
       clearPasswordChangeData();
       return;
     }
     
-    Utils.log('Password change: appears successful, updating vault');
-    
-    // Ask user confirmation before updating
-    if (Utils.askConsent('Password change successful. Update saved credentials with new password?')) {
-      chrome.runtime.sendMessage({
-        action: 'updatePassword',
-        origin: currentOrigin,
-        newPassword: data.newPassword
-      }, (response) => {
-        if (response && response.success) {
-          Utils.showNotification('Password Updated', 'Your new password has been saved to the vault.');
-          Utils.log('Password updated in vault');
-        } else {
-          Utils.log('Failed to update password:', response ? response.error : 'No response');
-        }
-      });
+    // Check if we navigated away from password change page (alternative success indicator)
+    if (!findPasswordChangeForm()) {
+      Utils.log('Password change: navigated away, might be successful');
+      
+      if (Utils.askConsent('Password might have changed. Update saved credentials?')) {
+        chrome.runtime.sendMessage({
+          action: 'updatePassword',
+          origin: currentOrigin,
+          newPassword: data.newPassword
+        }, (response) => {
+          if (response && response.success) {
+            Utils.showNotification('Password Updated', 'Your new password has been saved to the vault.');
+            Utils.log('Password updated in vault');
+          } else {
+            Utils.log('Failed to update password:', response ? response.error : 'No response');
+          }
+        });
+      }
+      
+      clearPasswordChangeData();
+      return;
     }
     
-    clearPasswordChangeData();
+    // Still on password change form with no success message - might have failed
+    // Keep the data in case user retries
+    Utils.log('Password change: still on form with no success message, keeping data for retry');
   }
   
   // ==========================================================================
@@ -459,37 +631,48 @@
         return;
       }
       
-      // CASE 1: Credentials found - ask user what to do
-      const action = prompt(
-        'SSO: Saved credentials found for this site.\n\n' +
-        'Options:\n' +
-        '1 = Auto-login (use saved credentials)\n' +
-        '2 = Type manually (skip SSO this time)\n' +
-        '3 = Update credentials (login manually and save new)\n\n' +
-        'Enter 1, 2, or 3:',
-        '1'
-      );
+      // Check if we already tried auto-login and it failed
+      const autoLoginAttempted = sessionStorage.getItem('sso_auto_login_attempted');
       
-      if (action === '2') {
-        // User wants to type manually - do nothing
-        Utils.log('User chose to type manually');
-        Utils.showNotification('SSO Skipped', 'You can now enter credentials manually.');
-        return;
+      if (autoLoginAttempted === currentOrigin) {
+        // We already tried auto-login and we're back on login page = login failed
+        sessionStorage.removeItem('sso_auto_login_attempted');
+        
+        Utils.log('Auto-login failed - showing options to user');
+        
+        const action = prompt(
+          'SSO: Auto-login failed (credentials may be incorrect).\n\n' +
+          'Options:\n' +
+          '1 = Retry auto-login (use saved credentials)\n' +
+          '2 = Type manually (skip SSO this time)\n' +
+          '3 = Update credentials (login manually and save new)\n\n' +
+          'Enter 1, 2, or 3:',
+          '1'
+        );
+        
+        if (action === '2') {
+          Utils.log('User chose to type manually');
+          Utils.showNotification('SSO Skipped', 'You can now enter credentials manually.');
+          return;
+        }
+        
+        if (action === '3') {
+          Utils.log('User chose to update credentials');
+          Utils.showNotification('Update Mode', 'Please enter your new credentials. They will be saved after successful login.');
+          enterLearningMode(response.loginSchema);
+          return;
+        }
+        
+        // action === '1' - retry auto-login (fall through)
       }
       
-      if (action === '3') {
-        // User wants to update credentials - enter learning mode
-        Utils.log('User chose to update credentials');
-        Utils.showNotification('Update Mode', 'Please enter your new credentials. They will be saved after successful login.');
-        enterLearningMode(response.loginSchema);
-        return;
-      }
+      // SILENT AUTO-LOGIN: Try to login without prompting
+      Utils.log('Credentials found - attempting silent auto-login');
       
-      // Default (action === '1' or anything else) - auto-login
-      Utils.showNotification('SSO Active', 'Logging you in automatically...');
-      Utils.log('Received credentials, filling form');
+      // Mark that we're attempting auto-login (to detect failure on next page load)
+      sessionStorage.setItem('sso_auto_login_attempted', currentOrigin);
       
-      await Utils.sleep(500);
+      await Utils.sleep(300);
       
       // Use schema-driven filling if available, otherwise fallback
       let filled = false;
@@ -502,6 +685,40 @@
       if (filled) {
         await Utils.sleep(500);
         submitLoginForm();
+        
+        // If login succeeds, the page will navigate away
+        // If we're still here after a delay, login might have failed (but page didn't reload)
+        await Utils.sleep(2000);
+        
+        // Check if we're still on login page (error shown inline)
+        if (findLoginForm()) {
+          // Login failed without page reload - show options immediately
+          sessionStorage.removeItem('sso_auto_login_attempted');
+          Utils.log('Auto-login failed (still on login page) - showing options');
+          
+          const action = prompt(
+            'SSO: Auto-login failed (credentials may be incorrect).\n\n' +
+            'Options:\n' +
+            '1 = Retry auto-login\n' +
+            '2 = Type manually (skip SSO)\n' +
+            '3 = Update credentials\n\n' +
+            'Enter 1, 2, or 3:',
+            '1'
+          );
+          
+          if (action === '2') {
+            Utils.showNotification('SSO Skipped', 'You can now enter credentials manually.');
+            return;
+          }
+          
+          if (action === '3') {
+            Utils.showNotification('Update Mode', 'Please enter new credentials.');
+            enterLearningMode(response.loginSchema);
+            return;
+          }
+          
+          // Retry = do nothing, user can reload page
+        }
       }
     });
   }

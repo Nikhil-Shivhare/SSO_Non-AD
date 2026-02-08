@@ -12,7 +12,7 @@ app.get('/', (req, res) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Non-AD Legacy Apps Launcher</title>
+    <title>Non-AD Apps Launcher</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -70,29 +70,29 @@ app.get('/', (req, res) => {
     </style>
 </head>
 <body>
-    <h1>Non-AD Legacy Apps Launcher</h1>
+    <h1>Non-AD Apps Launcher</h1>
     
     <div class="app-list">
         <div class="app-item">
-            <h3>App A — Session-based legacy app</h3>
+            <h3>App A — Session-based app</h3>
             <p>Traditional session-based authentication with 30-minute timeout</p>
             <a href="http://localhost:3001/login" target="_blank">Launch App A</a>
         </div>
         
         <div class="app-item">
-            <h3>App B — Session + CSRF legacy app</h3>
+            <h3>App B — Session + CSRF app</h3>
             <p>Session-based authentication with CSRF protection</p>
             <a href="http://localhost:3002/login" target="_blank">Launch App B</a>
         </div>
         
         <div class="app-item">
-            <h3>App C — Stateless legacy app (no session)</h3>
+            <h3>App C — Stateless app (no session)</h3>
             <p>Stateless application requiring login on every page refresh</p>
             <a href="http://localhost:3003/login" target="_blank">Launch App C</a>
         </div>
         
         <div class="app-item">
-            <h3>App D — Role-based login legacy app</h3>
+            <h3>App D — Role-based login app</h3>
             <p>Requires role selection during login - breaks naive SSO credential replay</p>
             <a href="http://localhost:3004/login" target="_blank">Launch App D</a>
         </div>
@@ -109,6 +109,6 @@ app.get('/', (req, res) => {
 
 // Start server
 app.listen(PORT, '127.0.0.1', () => {
-    console.log(`Legacy App Launcher running at http://localhost:${PORT}`);
+    console.log(`App Launcher running at http://localhost:${PORT}`);
     console.log('This is a navigation UI only - no authentication or backend logic');
 });
