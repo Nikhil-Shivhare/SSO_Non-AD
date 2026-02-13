@@ -16,6 +16,7 @@ const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const vaultClient = require('./vaultClient');
 
 const DB_PATH = path.join(__dirname, 'database.sqlite');
 const SALT_ROUNDS = 10;
@@ -46,7 +47,8 @@ async function initDatabase() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN ('admin', 'user'))
+            role TEXT NOT NULL CHECK(role IN ('admin', 'user')),
+            vault_id TEXT
         );
 
         -- Applications registry
@@ -75,21 +77,39 @@ async function initDatabase() {
             expires_at INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
-
-        -- Vault credentials (per user per app)
-        -- WARNING: app_password is PLAIN TEXT for PoC only!
-        CREATE TABLE IF NOT EXISTS vault_credentials (
-            user_id INTEGER,
-            app_id INTEGER,
-            app_username TEXT NOT NULL,
-            app_password TEXT NOT NULL,
-            extra_fields TEXT DEFAULT NULL,
-            PRIMARY KEY (user_id, app_id),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
-        );
     `);
 
+    // Migrate existing databases: add vault_id column if missing
+    try {
+        db.run('ALTER TABLE users ADD COLUMN vault_id TEXT');
+        console.log('[DB] Added vault_id column to existing users table');
+        
+        // Generate vault_id for existing users
+        const existingUsers = queryAll('SELECT id FROM users WHERE vault_id IS NULL');
+        existingUsers.forEach(user => {
+            const vaultId = `vault_${user.id}`;
+            run('UPDATE users SET vault_id = ? WHERE id = ?', [vaultId, user.id]);
+        });
+        if (existingUsers.length > 0) {
+            console.log(`[DB] Generated vault_id for ${existingUsers.length} existing users`);
+        }
+    } catch (err) {
+        // Column already exists, ignore
+        if (!err.message.includes('duplicate column')) {
+            console.error('[DB] Migration error:', err.message);
+        }
+    }
+    
+    // Guard: fix any users with NULL or empty vault_id (runs every startup)
+    const usersWithoutVault = queryAll("SELECT id, username FROM users WHERE vault_id IS NULL OR vault_id = ''");
+    if (usersWithoutVault.length > 0) {
+        usersWithoutVault.forEach(user => {
+            const vaultId = `vault_${user.id}`;
+            db.run('UPDATE users SET vault_id = ? WHERE id = ?', [vaultId, user.id]);
+            console.log(`[DB] Auto-assigned vault_id=${vaultId} for user ${user.username}`);
+        });
+    }
+    
     // Seed if needed
     seedDatabase();
     saveDatabase();
@@ -143,24 +163,46 @@ function seedDatabase() {
 
     db.run('INSERT OR IGNORE INTO users (username, password_hash, role) VALUES (?, ?, ?)', ['admin', adminHash, 'admin']);
     db.run('INSERT OR IGNORE INTO users (username, password_hash, role) VALUES (?, ?, ?)', ['testuser', userHash, 'user']);
+    
+    // Set vault_id for seed users
+    const adminUser = queryOne('SELECT id FROM users WHERE username = ?', ['admin']);
+    const testUser = queryOne('SELECT id FROM users WHERE username = ?', ['testuser']);
+    if (adminUser) run('UPDATE users SET vault_id = ? WHERE id = ?', [`vault_${adminUser.id}`, adminUser.id]);
+    if (testUser) run('UPDATE users SET vault_id = ? WHERE id = ?', [`vault_${testUser.id}`, testUser.id]);
+    
     console.log('[DB] Seeded 2 users: admin, testuser');
 
-    // Get testuser ID
-    const userResult = db.exec('SELECT id FROM users WHERE username = ?', ['testuser']);
+    // Get testuser ID for app assignment
+    const userResult = db.exec('SELECT id, vault_id FROM users WHERE username = ?', ['testuser']);
     if (userResult.length > 0 && userResult[0].values.length > 0) {
         const testUserId = userResult[0].values[0][0];
+        const testUserVaultId = userResult[0].values[0][1];
         
         // Get all app IDs
-        const appsResult = db.exec('SELECT id FROM apps');
+        const appsResult = db.exec('SELECT id, appId FROM apps');
         if (appsResult.length > 0) {
+            // Assign apps to user
             appsResult[0].values.forEach(row => {
                 const appId = row[0];
                 db.run('INSERT OR IGNORE INTO user_apps (user_id, app_id) VALUES (?, ?)', [testUserId, appId]);
-                db.run('INSERT OR IGNORE INTO vault_credentials (user_id, app_id, app_username, app_password) VALUES (?, ?, ?, ?)', 
-                    [testUserId, appId, 'testuser', 'TestPass123!']);
             });
             console.log('[DB] Assigned all apps to testuser');
-            console.log('[DB] Seeded vault credentials for testuser');
+            
+            // Seed credentials via Vault Service (async, non-blocking)
+            if (testUserVaultId) {
+                appsResult[0].values.forEach(async row => {
+                    const appIdString = row[1];
+                    try {
+                        await vaultClient.write(testUserVaultId, appIdString, {
+                            username: 'testuser',
+                            password: 'TestPass123!'
+                        });
+                        console.log(`[DB] Seeded vault credentials for testuser -> ${appIdString}`);
+                    } catch (err) {
+                        console.warn(`[DB] Failed to seed vault for ${appIdString}:`, err.message);
+                    }
+                });
+            }
         }
     }
     
@@ -211,7 +253,12 @@ function findUserByUsername(username) {
 }
 
 function findUserById(id) {
-    return queryOne('SELECT id, username, role FROM users WHERE id = ?', [id]);
+    return queryOne('SELECT id, username, role, vault_id FROM users WHERE id = ?', [id]);
+}
+
+function getVaultId(userId) {
+    const user = queryOne('SELECT vault_id FROM users WHERE id = ?', [userId]);
+    return user ? user.vault_id : null;
 }
 
 function getAllUsers() {
@@ -221,8 +268,19 @@ function getAllUsers() {
 function createUser(username, password, role) {
     const hash = bcrypt.hashSync(password, SALT_ROUNDS);
     try {
-        const result = run('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)', [username, hash, role]);
-        return { success: true, userId: result.lastInsertRowid };
+        // Insert user — get rowid IMMEDIATELY before saveDatabase() can reset it
+        db.run('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)', [username, hash, role]);
+        const rowIdResult = db.exec('SELECT last_insert_rowid()');
+        const userId = rowIdResult[0].values[0][0];
+        
+        // Set vault_id using the captured userId
+        const vaultId = `vault_${userId}`;
+        db.run('UPDATE users SET vault_id = ? WHERE id = ?', [vaultId, userId]);
+        
+        // Save once after both operations complete
+        saveDatabase();
+        console.log(`[DB] Created user ${username} with id=${userId}, vault_id=${vaultId}`);
+        return { success: true, userId };
     } catch (err) {
         if (err.message.includes('UNIQUE constraint')) {
             return { success: false, error: 'Username already exists' };
@@ -231,19 +289,29 @@ function createUser(username, password, role) {
     }
 }
 
-function deleteUser(id) {
+async function deleteUser(id) {
     const user = findUserById(id);
     if (user && user.role === 'admin') {
         return { success: false, error: 'Cannot delete admin users' };
     }
     
+    // Get vault_id and delete from Vault Service first
+    const vaultId = getVaultId(id);
+    if (vaultId) {
+        const vaultResult = await vaultClient.deleteVault(vaultId);
+        if (!vaultResult.success) {
+            console.error(`[DB] Failed to delete vault for user ${id}:`, vaultResult.error);
+            return { success: false, error: 'Failed to delete vault credentials' };
+        }
+        console.log(`[DB] Deleted vault credentials for user ${id}`);
+    }
+    
     // Cascade delete: remove all related data for this user
-    run('DELETE FROM vault_credentials WHERE user_id = ?', [id]);
     run('DELETE FROM user_apps WHERE user_id = ?', [id]);
     run('DELETE FROM plugin_tokens WHERE user_id = ?', [id]);
     run('DELETE FROM users WHERE id = ?', [id]);
     
-    console.log(`[DB] Deleted user ${id} and all related credentials`);
+    console.log(`[DB] Deleted user ${id} and all related data`);
     return { success: true };
 }
 
@@ -342,86 +410,7 @@ function revokeUserTokens(userId) {
     run('DELETE FROM plugin_tokens WHERE user_id = ?', [userId]);
 }
 
-// ============================================================================
-// VAULT CREDENTIAL FUNCTIONS
-// ============================================================================
 
-/**
- * Get vault credentials in extensible format
- * @returns {{ fields: { username, password, ... } } | null}
- */
-function getVaultCredentials(userId, appId) {
-    const app = queryOne('SELECT id FROM apps WHERE appId = ?', [appId]);
-    if (!app) return null;
-    
-    const row = queryOne('SELECT app_username, app_password, extra_fields FROM vault_credentials WHERE user_id = ? AND app_id = ?',
-        [userId, app.id]);
-    
-    if (!row) return null;
-    
-    // Build extensible fields format
-    const fields = {
-        username: row.app_username,
-        password: row.app_password
-    };
-    
-    // Merge extra fields if present
-    if (row.extra_fields) {
-        try {
-            const extra = JSON.parse(row.extra_fields);
-            Object.assign(fields, extra);
-        } catch (e) {
-            console.log('[DB] Error parsing extra_fields:', e.message);
-        }
-    }
-    
-    return { fields };
-}
-
-/**
- * Save vault credentials (extensible format)
- * @param {number} userId
- * @param {string} appId
- * @param {{ username, password, ... }} fields - Credential fields
- */
-function saveVaultCredentials(userId, appId, fields) {
-    const app = queryOne('SELECT id FROM apps WHERE appId = ?', [appId]);
-    if (!app) return { success: false, error: 'App not found' };
-    
-    // Extract core fields and extra fields
-    const { username, password, ...extraFields } = fields;
-    
-    if (!username || !password) {
-        return { success: false, error: 'username and password are required' };
-    }
-    
-    const extraFieldsJson = Object.keys(extraFields).length > 0 
-        ? JSON.stringify(extraFields) 
-        : null;
-    
-    // Delete existing and insert new
-    run('DELETE FROM vault_credentials WHERE user_id = ? AND app_id = ?', [userId, app.id]);
-    run('INSERT INTO vault_credentials (user_id, app_id, app_username, app_password, extra_fields) VALUES (?, ?, ?, ?, ?)',
-        [userId, app.id, username, password, extraFieldsJson]);
-    
-    return { success: true };
-}
-
-/**
- * Update only the password field (for password change)
- */
-function updateVaultPassword(userId, appId, newPassword) {
-    const existing = getVaultCredentials(userId, appId);
-    if (!existing) return { success: false, error: 'No credentials found' };
-    
-    // Update only password, keep other fields
-    const updatedFields = { ...existing.fields, password: newPassword };
-    return saveVaultCredentials(userId, appId, updatedFields);
-}
-
-/**
- * Get app with login schema
- */
 function getAppWithSchema(appId) {
     const app = queryOne('SELECT * FROM apps WHERE appId = ?', [appId]);
     if (!app) return null;
@@ -448,6 +437,7 @@ module.exports = {
     createUser,
     deleteUser,
     verifyPassword,
+    getVaultId,
     
     // App functions
     getAllApps,
@@ -462,9 +452,6 @@ module.exports = {
     introspectToken,
     revokeUserTokens,
     
-    // Vault functions
-    getVaultCredentials,
-    saveVaultCredentials,
-    updateVaultPassword,
+    // App schema function
     getAppWithSchema
 };

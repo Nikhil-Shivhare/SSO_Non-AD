@@ -4,7 +4,7 @@ The Primary Identity service manages users, applications, and their credentials 
 
 **Location:** `primary-identity/database.sqlite` (SQLite database)
 
-![Database Schema Diagram](./credential_schema_diagram.png)
+![Database Schema Diagram](./architecture_IMAGE/credential_schema_diagram.png)
 
 ---
 
@@ -84,12 +84,12 @@ erDiagram
 
 Users who log in to the Primary Identity portal (http://localhost:4000).
 
-| Column          | Type        | Description                                      |
-| --------------- | ----------- | ------------------------------------------------ |
-| `id`            | INTEGER PK  | Auto-incrementing User ID                        |
-| `username`      | TEXT UNIQUE | Primary Identity username                        |
-| `password_hash` | TEXT        | Bcrypt hash of the user's password               |
-| `role`          | TEXT        | Role in Primary Identity (e.g., 'admin', 'user') |
+| Column          | Type        | Description                                                              |
+| --------------- | ----------- | ------------------------------------------------------------------------ |
+| `id`            | INTEGER PK  | Auto-incrementing User ID                                                |
+| `username`      | TEXT UNIQUE | Primary Identity username                                                |
+| `password_hash` | TEXT        | Bcrypt hash of the user's password                                       |
+| `role`          | TEXT        | Role in Primary Identity, CHECK constraint allows only 'admin' or 'user' |
 
 ### 2. `apps` (Registered Applications)
 
@@ -137,13 +137,13 @@ Stores the credentials to be replayed into the legacy apps.
 
 Stores active sessions/tokens for the browser extension.
 
-| Column       | Type        | Description                                  |
-| ------------ | ----------- | -------------------------------------------- |
-| `id`         | INTEGER PK  | Auto-incrementing Token ID                   |
-| `token`      | TEXT UNIQUE | The bearer token string                      |
-| `user_id`    | INTEGER FK  | References `users.id`                        |
-| `scopes`     | TEXT        | Permissions (e.g., 'vault:read,vault:write') |
-| `expires_at` | INTEGER     | Expiration timestamp (Unix epoch)            |
+| Column       | Type        | Description                                                      |
+| ------------ | ----------- | ---------------------------------------------------------------- |
+| `id`         | INTEGER PK  | Auto-incrementing Token ID                                       |
+| `token`      | TEXT UNIQUE | The bearer token string (format: `ptk_` + 32 random hex bytes)   |
+| `user_id`    | INTEGER FK  | References `users.id`                                            |
+| `scopes`     | TEXT        | JSON array of permissions (e.g., `["vault:read","vault:write"]`) |
+| `expires_at` | INTEGER     | Expiration timestamp (Unix epoch seconds)                        |
 
 ---
 
@@ -157,6 +157,7 @@ Scenario: User logs into **App-D** (which requires a role).
 4.  **Response**:
     ```json
     {
+      "appId": "app_d",
       "fields": {
         "username": "nikhil",
         "password": "secret_password",

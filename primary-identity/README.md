@@ -36,8 +36,8 @@ Server runs at: **http://localhost:4000**
 | **Session & Auth** |                                  |                      |                |                                                                          |
 | GET                | `/login`                         | None                 | Browser        | Displays login page                                                      |
 | POST               | `/login`                         | None                 | Browser → DB   | Authenticates user, creates session                                      |
-| GET                | `/logout`                        | Session              | Browser        | Destroys session, redirects to login                                     |
-| GET                | `/api/session/status`            | Session Cookie       | Extension      | Returns `{active: true/false}` for session check                         |
+| GET                | `/logout`                        | Session              | Browser        | Revokes all plugin tokens, destroys session, redirects to login          |
+| GET                | `/api/session/status`            | Session Cookie       | Extension      | Returns `{authenticated: true/false, userId, username, role}`            |
 | **Extension APIs** |                                  |                      |                |                                                                          |
 | POST               | `/api/plugin/bootstrap`          | Session Cookie       | Extension → DB | Returns `pluginToken`, `userId`, `username`, `apps[]` with `loginSchema` |
 | POST               | `/api/token/introspect`          | None (token in body) | Extension      | Validates pluginToken, returns user info and scopes                      |
@@ -52,7 +52,7 @@ Server runs at: **http://localhost:4000**
 | POST               | `/admin/assign-app`              | Session (Admin)      | Browser → DB   | Assign app to user                                                       |
 | POST               | `/admin/remove-app`              | Session (Admin)      | Browser → DB   | Remove app from user                                                     |
 | **Pages**          |                                  |                      |                |                                                                          |
-| GET                | `/`                              | None                 | Browser        | Redirects to dashboard or login                                          |
+| GET                | `/`                              | None                 | Browser        | Redirects to `/login`                                                    |
 | GET                | `/dashboard`                     | Session              | Browser        | User dashboard with assigned apps                                        |
 
 ### Authentication Types
@@ -157,4 +157,6 @@ SQLite database stored as `database.sqlite`. Auto-created on first run.
 sqlite3 database.sqlite "SELECT u.username, vc.app_id, vc.app_username, vc.app_password, vc.extra_fields FROM vault_credentials vc JOIN users u ON vc.user_id = u.id;"
 ```
 
- sqlite3 database.sqlite "SELECT * FROM vault_credentials;"
+```bash
+sqlite3 database.sqlite "SELECT * FROM vault_credentials;"
+```

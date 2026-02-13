@@ -1,0 +1,12 @@
+     vault_id      |   app_id   |                        fields                         |         created_at         
+-------------------+------------+-------------------------------------------------------+----------------------------
+ test_repl         | test_app   | {"password": "ReplTest123!", "username": "repltest"}  | 2026-02-11 08:41:32.89069
+ final_test        | app_verify | {"password": "Verify123!", "username": "verify"}      | 2026-02-11 13:11:06.621437
+ verify_phase3     | check3_app | {"password": "Phase3Pass!", "username": "phase3user"} | 2026-02-11 13:16:53.463995
+ replica_down_test | test_app   | {"password": "Works123!", "username": "stillworks"}   | 2026-02-11 13:17:52.647211
+ sim1_test         | test       | {"p": "test", "u": "test"}                            | 2026-02-11 13:44:59.247495
+ sim2_test         | test       | {"p": "pass", "u": "only3"}                           | 2026-02-11 13:45:49.330388
+ step3_verify      | test       | {"p": "pass", "u": "test"}                            | 2026-02-11 13:53:14.953928
+ step4_solo        | test       | {"p": "pass", "u": "solo3"}                           | 2026-02-11 13:53:58.143157
+(8 rows)
+

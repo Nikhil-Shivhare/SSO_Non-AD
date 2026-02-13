@@ -15,6 +15,7 @@
 const express = require('express');
 const session = require('express-session');
 const db = require('./db');
+const vaultClient = require('./vaultClient');
 
 const app = express();
 const PORT = 4000;
@@ -343,8 +344,8 @@ app.post('/admin/users', requireAdmin, (req, res) => {
 });
 
 // POST /admin/users/:id/delete - Delete user
-app.post('/admin/users/:id/delete', requireAdmin, (req, res) => {
-    const result = db.deleteUser(parseInt(req.params.id));
+app.post('/admin/users/:id/delete', requireAdmin, async (req, res) => {
+    const result = await db.deleteUser(parseInt(req.params.id));
     
     if (result.success) {
         console.log(`[ADMIN] Deleted user ID: ${req.params.id}`);
@@ -450,7 +451,7 @@ app.post('/api/token/introspect', (req, res) => {
 // ============================================================================
 
 // GET /api/vault/credentials?appId=app_a
-app.get('/api/vault/credentials', requireBearerToken, (req, res) => {
+app.get('/api/vault/credentials', requireBearerToken, async (req, res) => {
     const { appId } = req.query;
     const userId = req.tokenData.userId;
     
@@ -468,11 +469,16 @@ app.get('/api/vault/credentials', requireBearerToken, (req, res) => {
         return res.status(403).json({ error: 'Token does not have vault:read scope' });
     }
     
-    // Get credentials
-    const credentials = db.getVaultCredentials(userId, appId);
+    // Get vault_id and call Vault Service
+    const vaultId = db.getVaultId(userId);
+    if (!vaultId) {
+        return res.status(500).json({ error: 'User vault_id not found' });
+    }
     
-    if (!credentials) {
-        return res.status(404).json({ error: 'No credentials found for this app' });
+    const result = await vaultClient.read(vaultId, appId);
+    
+    if (!result.success) {
+        return res.status(result.status).json({ error: result.error });
     }
     
     console.log(`[VAULT] Returned credentials for ${req.tokenData.username} -> ${appId}`);
@@ -480,12 +486,12 @@ app.get('/api/vault/credentials', requireBearerToken, (req, res) => {
     // Return extensible fields format
     res.json({
         appId: appId,
-        fields: credentials.fields
+        fields: result.fields
     });
 });
 
 // POST /api/vault/credentials
-app.post('/api/vault/credentials', requireBearerToken, (req, res) => {
+app.post('/api/vault/credentials', requireBearerToken, async (req, res) => {
     const { appId, fields } = req.body;
     const userId = req.tokenData.userId;
     
@@ -513,11 +519,16 @@ app.post('/api/vault/credentials', requireBearerToken, (req, res) => {
         return res.status(403).json({ error: 'Token does not have vault:write scope' });
     }
     
-    // Save credentials
-    const result = db.saveVaultCredentials(userId, appId, credentialFields);
+    // Get vault_id and call Vault Service
+    const vaultId = db.getVaultId(userId);
+    if (!vaultId) {
+        return res.status(500).json({ error: 'User vault_id not found' });
+    }
+    
+    const result = await vaultClient.write(vaultId, appId, credentialFields);
     
     if (!result.success) {
-        return res.status(400).json({ error: result.error });
+        return res.status(result.status).json({ error: result.error });
     }
     
     console.log(`[VAULT] Saved credentials for ${req.tokenData.username} -> ${appId}`);
@@ -526,7 +537,7 @@ app.post('/api/vault/credentials', requireBearerToken, (req, res) => {
 });
 
 // PUT /api/vault/password - Update password only (for password change)
-app.put('/api/vault/password', requireBearerToken, (req, res) => {
+app.put('/api/vault/password', requireBearerToken, async (req, res) => {
     const { appId, newPassword } = req.body;
     const userId = req.tokenData.userId;
     
@@ -544,11 +555,16 @@ app.put('/api/vault/password', requireBearerToken, (req, res) => {
         return res.status(403).json({ error: 'Token does not have vault:write scope' });
     }
     
-    // Use new updateVaultPassword function (preserves other fields)
-    const result = db.updateVaultPassword(userId, appId, newPassword);
+    // Get vault_id and call Vault Service
+    const vaultId = db.getVaultId(userId);
+    if (!vaultId) {
+        return res.status(500).json({ error: 'User vault_id not found' });
+    }
+    
+    const result = await vaultClient.updatePassword(vaultId, appId, newPassword);
     
     if (!result.success) {
-        return res.status(400).json({ error: result.error });
+        return res.status(result.status).json({ error: result.error });
     }
     
     console.log(`[VAULT] Updated password for ${req.tokenData.username} -> ${appId}`);
@@ -571,6 +587,15 @@ app.get('/', (req, res) => {
 async function startServer() {
     try {
         await db.initDatabase();
+        
+        // Check Vault Service health (warn-only, don't crash PID)
+        const vaultHealthy = await vaultClient.healthCheck();
+        if (vaultHealthy) {
+            console.log('[VAULT] ✓ Vault Service reachable at ' + (process.env.VAULT_URL || 'http://localhost:5000'));
+        } else {
+            console.warn('[VAULT] ⚠ Vault Service unreachable — credential operations will fail');
+            console.warn('[VAULT] Make sure Vault Service is running: cd vault-service && docker-compose up -d');
+        }
         
         app.listen(PORT, '127.0.0.1', () => {
             console.log('========================================');

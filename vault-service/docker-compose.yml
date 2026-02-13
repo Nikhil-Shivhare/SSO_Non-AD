@@ -1,0 +1,123 @@
+services:
+  # ──────────────────────────────────────────────────
+  # Postgres Primary (Master)
+  # ──────────────────────────────────────────────────
+  postgres-primary:
+    image: bitnami/postgresql:latest
+    container_name: vault-postgres-primary
+    restart: unless-stopped
+    environment:
+      POSTGRESQL_REPLICATION_MODE: master
+      POSTGRESQL_REPLICATION_USER: repl_user
+      POSTGRESQL_REPLICATION_PASSWORD: repl_secret
+      POSTGRESQL_USERNAME: vault_user
+      POSTGRESQL_PASSWORD: vault_secret
+      POSTGRESQL_DATABASE: vault_db
+      POSTGRESQL_NUM_SYNCHRONOUS_REPLICAS: 0
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - postgres_primary_data:/bitnami/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vault_user -d vault_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ──────────────────────────────────────────────────
+  # Postgres Replica (Slave)
+  # ──────────────────────────────────────────────────
+  postgres-replica-1:
+    image: bitnami/postgresql:latest
+    container_name: vault-postgres-replica-1
+    restart: unless-stopped
+    environment:
+      POSTGRESQL_REPLICATION_MODE: slave
+      POSTGRESQL_MASTER_HOST: postgres-primary
+      POSTGRESQL_MASTER_PORT_NUMBER: 5432
+      POSTGRESQL_REPLICATION_USER: repl_user
+      POSTGRESQL_REPLICATION_PASSWORD: repl_secret
+      POSTGRESQL_USERNAME: vault_user
+      POSTGRESQL_PASSWORD: vault_secret
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_replica_data:/bitnami/postgresql
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+
+  # ──────────────────────────────────────────────────
+  # Vault Instances (stateless, no host port)
+  # ──────────────────────────────────────────────────
+  vault-1:
+    build: .
+    container_name: vault-1
+    restart: unless-stopped
+    environment:
+      PORT: 5000
+      INSTANCE_NAME: vault-1
+      PGHOST: postgres-primary
+      PGPORT: 5432
+      PGDATABASE: vault_db
+      PGUSER: vault_user
+      PGPASSWORD: vault_secret
+      PGPOOL_MAX: 10
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+
+  vault-2:
+    build: .
+    container_name: vault-2
+    restart: unless-stopped
+    environment:
+      PORT: 5000
+      INSTANCE_NAME: vault-2
+      PGHOST: postgres-primary
+      PGPORT: 5432
+      PGDATABASE: vault_db
+      PGUSER: vault_user
+      PGPASSWORD: vault_secret
+      PGPOOL_MAX: 10
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+
+  vault-3:
+    build: .
+    container_name: vault-3
+    restart: unless-stopped
+    environment:
+      PORT: 5000
+      INSTANCE_NAME: vault-3
+      PGHOST: postgres-primary
+      PGPORT: 5432
+      PGDATABASE: vault_db
+      PGUSER: vault_user
+      PGPASSWORD: vault_secret
+      PGPOOL_MAX: 10
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+
+  # ──────────────────────────────────────────────────
+  # Nginx Load Balancer (round-robin)
+  # ──────────────────────────────────────────────────
+  vault-lb:
+    image: nginx:alpine
+    container_name: vault-lb
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - vault-1
+      - vault-2
+      - vault-3
+
+volumes:
+  postgres_primary_data:
+  postgres_replica_data:
