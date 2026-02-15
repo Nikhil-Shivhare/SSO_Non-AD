@@ -12,11 +12,13 @@
 │   (The Brain)       │    (The Hands)      │    (Helpers)        │
 ├─────────────────────┼─────────────────────┼─────────────────────┤
 │ • State management  │ • DOM detection     │ • Notifications     │
-│ • API calls         │ • Form filling      │ • User consent      │
-│ • Session tracking  │ • Learning mode     │ • Logging           │
+│ • API calls         │ • Form filling      │ • User consent     │
+│ • Session tracking  │ • Learning mode     │ • Logging          │
 │ • User isolation    │ • Password change   │                     │
 └─────────────────────┴─────────────────────┴─────────────────────┘
 ```
+
+> **Note:** The extension communicates with Primary Identity Service (PID) at port 4000. Credential storage is handled by the Vault Service (proxied through PID).
 
 ## Files
 
@@ -53,7 +55,7 @@ When a different user logs into Primary Identity:
 4. Logs: `"User changed: userA -> userB, clearing state"`
 5. Prevents credential leakage between users
 
-### Cascade Logout (New!)
+### Cascade Logout
 
 When user changes in Primary Identity, the extension automatically logs out from all legacy apps:
 
@@ -82,15 +84,15 @@ Page loads → Login form detected
       No                    Yes
       ↓                      ↓
   Learning Mode       Try SILENT auto-login
-                             ↓
-                     ┌─ Success? ─┐
-                     │            │
-                    Yes          No
-                     ↓            ↓
-               Navigate away   Show options:
-                               1 = Retry
-                               2 = Manual
-                               3 = Update
+                          ↓
+                  ┌─ Success? ─┐
+                  │            │
+                 Yes          No
+                  ↓            ↓
+            Navigate away   Show options:
+                              1 = Retry
+                              2 = Manual
+                              3 = Update
 ```
 
 | Scenario            | Behavior                        |
@@ -136,6 +138,8 @@ Content Script                    Background Script
 | `saveCredentials(appId, fields)` | `POST /api/vault/credentials` | Save learned credentials   |
 | `updatePassword(appId, newPass)` | `PUT /api/vault/password`     | Update password only       |
 
+> **Note:** These API endpoints are provided by Primary Identity Service (PID), which handles credential storage.
+
 ### Helper Functions
 
 | Function                         | Purpose                         |
@@ -175,10 +179,10 @@ Content Script                    Background Script
 
 ### Password Change
 
-| Function                       | Purpose                              |
-| ------------------------------ | ------------------------------------ |
-| `handlePasswordChange()`       | Capture new password on submit       |
-| `checkPasswordChangeSuccess()` | On navigation, update vault password |
+| Function                       | Purpose                        |
+| ------------------------------ | ------------------------------ |
+| `handlePasswordChange()`       | Capture new password on submit |
+| `checkPasswordChangeSuccess()` | On navigation, update password |
 
 ### Session Storage Helpers
 
@@ -266,13 +270,13 @@ Page Load
 
 ## User Notifications (utils.js)
 
-| Event            | Message                                          |
-| ---------------- | ------------------------------------------------ |
-| SSO Active       | "SSO Active - Logging you in automatically"      |
-| First-Time       | "First-Time Login - Please log in manually"      |
-| Save Prompt      | "Save credentials for future automatic login?"   |
-| Saved            | "Credentials Saved - SSO is now enabled"         |
-| Password Updated | "Password Updated - New password saved to vault" |
+| Event            | Message                                        |
+| ---------------- | ---------------------------------------------- |
+| SSO Active       | "SSO Active - Logging you in automatically"    |
+| First-Time       | "First-Time Login - Please log in manually"    |
+| Save Prompt      | "Save credentials for future automatic login?" |
+| Saved            | "Credentials Saved - SSO is now enabled"       |
+| Password Updated | "Password Updated - New password saved"        |
 
 ---
 
@@ -312,7 +316,7 @@ Configured in `manifest.json`:
 
 > ⚠️ **Proof of Concept Limitations**
 
-- Credentials stored in memory only (not persisted)
+- Credentials stored in memory only (not persisted by extension)
 - No encryption of data in transit beyond HTTPS
 - Session check runs before every sensitive action
 - Logout from Primary Identity immediately invalidates extension
@@ -324,5 +328,3 @@ Configured in `manifest.json`:
 - MFA handling
 - Keycloak integration
 - Token refresh scheduling
-  
-  

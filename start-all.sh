@@ -10,6 +10,20 @@ echo "🛑 Stopping any existing services..."
 ./stop-all.sh > /dev/null 2>&1
 sleep 1
 
+# Start Vault Service (Docker)
+echo "▶️  Starting Vault Service (Docker)..."
+(cd vault-service && docker-compose up -d > /tmp/vault-service.log 2>&1)
+echo "   Waiting for Vault to be ready..."
+sleep 7
+
+# Verify Vault is running
+VAULT_HEALTH=$(curl -s http://localhost:5000/health 2>/dev/null | jq -r '.status' 2>/dev/null)
+if [ "$VAULT_HEALTH" = "ok" ]; then
+    echo "   ✓ Vault Service is healthy"
+else
+    echo "   ⚠️  Vault Service may not be ready yet"
+fi
+
 # Start Primary Identity
 echo "▶️  Starting Primary Identity (port 4000)..."
 (cd primary-identity && npm start > /tmp/primary-identity.log 2>&1 &)
@@ -50,13 +64,14 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 check_service() {
     local port=$1
     local name=$2
-    if lsof -i:$port > /dev/null 2>&1; then
+    if nc -z localhost $port > /dev/null 2>&1; then
         echo "✓ $name (http://localhost:$port) - Running"
     else
         echo "✗ $name - FAILED TO START"
     fi
 }
 
+check_service 5000 "Vault Service"
 check_service 4000 "Primary Identity"
 check_service 3001 "APP1"
 check_service 3002 "APP2"
@@ -67,6 +82,7 @@ check_service 3100 "Launcher"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "📝 Logs are saved in /tmp/"
+echo "   - Vault Service: /tmp/vault-service.log"
 echo "   - Primary Identity: /tmp/primary-identity.log"
 echo "   - APP1: /tmp/app1.log"
 echo "   - APP2: /tmp/app2.log"
@@ -75,4 +91,4 @@ echo "   - APP4: /tmp/app4.log"
 echo "   - Launcher: /tmp/launcher.log"
 echo ""
 echo "🔍 To view logs: tail -f /tmp/primary-identity.log"
-echo "🛑 To stop all: ./stop-all.sh (or pkill -f 'node app.js')"
+echo "🛑 To stop all: ./stop-all.sh"
