@@ -246,12 +246,13 @@ This starts all 6 services:
 
 Four demo apps simulate different real-world legacy authentication scenarios:
 
-| App   | Port | Auth Type              | Challenge for SSO                                    |
-| ----- | ---- | ---------------------- | ---------------------------------------------------- |
-| App-A | 3001 | Session-based          | Standard login — baseline case                       |
-| App-B | 3002 | Session + CSRF         | CSRF token required — extension must handle          |
-| App-C | 3003 | Stateless (no session) | Login required on every page refresh                 |
-| App-D | 3004 | Role-based login       | Extra field (role dropdown) beyond username/password |
+| App     | Port | Auth Type              | Challenge for SSO                                    |
+| ------- | ---- | ---------------------- | ---------------------------------------------------- |
+| App-A   | 3001 | Session-based          | Standard login — baseline case                       |
+| App-B   | 3002 | Session + CSRF         | CSRF token required — extension must handle          |
+| App-C   | 3003 | Stateless (no session) | Login required on every page refresh                 |
+| App-D   | 3004 | Role-based login       | Extra field (role dropdown) beyond username/password |
+| picoCTF | N/A  | Third-Party React SPA  | Dynamic form rendering, synthetic React events       |
 
 ### Demo User Accounts
 
@@ -288,11 +289,19 @@ Page loads → Login form detected
 
 When no saved credentials exist for an app:
 
-1. Extension detects login form
+1. Extension detects login form (or waits for it via MutationObserver)
 2. Enters "Learning Mode" — watches for manual login
 3. User logs in normally
-4. Extension captures credentials and saves to vault
+4. Extension captures credentials (via form submit or button click) and saves to vault
 5. Future visits auto-login silently
+
+### ✅ React & SPA Support
+
+The extension supports modern Single Page Applications (SPAs) like React, Vue, and Angular:
+
+1. **Dynamic DOM Observation:** If a login form isn't present on page load, a `MutationObserver` waits for it to be injected.
+2. **Synthetic Event Interception:** Captures credentials via `button click` handlers immediately before React's internal state clears the fields.
+3. **Cross-App Success Detection:** Watches for the login form to disappear from the DOM as a universal success indicator, rather than relying on URL redirects.
 
 ### ✅ Schema-Driven Form Filling
 

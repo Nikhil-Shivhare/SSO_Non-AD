@@ -175,6 +175,7 @@ Content Script                    Background Script
 | --------------------------- | ----------------------------------------- |
 | `enterLearningMode(schema)` | Watch for manual login, capture fields    |
 | `captureFormFields(schema)` | Extract values from form based on schema  |
+| `watchWithObserver()`       | Observe dynamic DOM removal (SPA success) |
 | `checkLearningSuccess()`    | On navigation, prompt to save credentials |
 
 ### Password Change
@@ -252,7 +253,7 @@ Page Load
     ├─► Detect password change form?
     │       └─► Yes: handlePasswordChange()
     │
-    ├─► Detect login form?
+    ├─► Detect login form (wait via MutationObserver for SPAs)?
     │       └─► No: Exit
     │
     ├─► Request credentials from background
@@ -261,7 +262,7 @@ Page Load
     │       │       └─► Yes: fillLoginFormWithSchema() → submit
     │       │
     │       └─► No credentials?
-    │               └─► enterLearningMode()
+    │               └─► enterLearningMode() -> watchWithObserver()
     │
     └─► Done
 ```
@@ -302,13 +303,14 @@ Page Load
 
 Configured in `manifest.json`:
 
-| Origin                    | App               |
-| ------------------------- | ----------------- |
-| `http://localhost:3001/*` | App-A             |
-| `http://localhost:3002/*` | App-B             |
-| `http://localhost:3003/*` | App-C             |
-| `http://localhost:3004/*` | App-D (with role) |
-| `http://localhost:4000/*` | Primary Identity  |
+| Origin                       | App               |
+| ---------------------------- | ----------------- |
+| `http://localhost:3001/*`    | App-A             |
+| `http://localhost:3002/*`    | App-B             |
+| `http://localhost:3003/*`    | App-C             |
+| `http://localhost:3004/*`    | App-D (with role) |
+| `http://localhost:4000/*`    | Primary Identity  |
+| `https://play.picoctf.org/*` | picoCTF (SPA)     |
 
 ---
 
