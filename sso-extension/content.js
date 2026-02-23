@@ -236,23 +236,106 @@
     const formData = findLoginForm();
     if (!formData) return;
     
-    const { form } = formData;
-    
-    // Capture credentials before form submission
+    const { form, usernameInput, passwordInput } = formData;
+
+    // Helper: capture + save + start watching 
+    function captureAndWatch() {
+      const capturedFields = captureFormFields(currentLoginSchema);
+      if (capturedFields && capturedFields.username && capturedFields.password) {
+        saveLearningCredentials(capturedFields);
+        Utils.log('Learning mode: captured fields', Object.keys(capturedFields));
+      } else {
+        // Fallback: capture directly from DOM inputs
+        const u = usernameInput ? usernameInput.value : '';
+        const p = passwordInput ? passwordInput.value : '';
+        if (u && p) {
+          saveLearningCredentials({ username: u, password: p });
+          Utils.log('Learning mode: captured via fallback (username/password)');
+        } else {
+          Utils.log('Learning mode: no credentials captured — fields were empty at capture time');
+          return;
+        }
+      }
+      // Start watching for success (works for both SPAs and traditional apps)
+      watchWithObserver();
+    }
+
+    // 1. Native form submit (traditional apps)
     if (form) {
       form.addEventListener('submit', () => {
-        const capturedFields = captureFormFields(currentLoginSchema);
-        if (capturedFields && capturedFields.username && capturedFields.password) {
-          saveLearningCredentials(capturedFields);
-          Utils.log('Learning mode: captured fields', Object.keys(capturedFields));
-          
-          // For stateless apps: Watch for DOM changes after submission
-          // (The form might be replaced with dashboard content without page navigation)
-          setTimeout(() => {
-            watchForLoginSuccess();
-          }, 1000);
+        Utils.log('Learning mode: form submit fired');
+        captureAndWatch();
+      });
+    }
+
+    // 2. Submit button click (React/SPA fallback — captures BEFORE React clears fields)
+    const submitBtn = form
+      ? form.querySelector('button[type="submit"], input[type="submit"], button:not([type])')
+      : document.querySelector('button[type="submit"], input[type="submit"]');
+    if (submitBtn) {
+      submitBtn.addEventListener('click', () => {
+        Utils.log('Learning mode: submit button click fired');
+        captureAndWatch();
+      });
+    }
+
+    /**
+     * Use MutationObserver to watch for the login form disappearing from the DOM.
+     * This is the most reliable success signal for React/Vue/Angular SPAs.
+     */
+    function watchWithObserver() {
+      Utils.log('Learning mode: MutationObserver watching for form removal...');
+      let resolved = false;
+
+      const observer = new MutationObserver(() => {
+        if (resolved) return;
+        const stillHasForm = !!document.querySelector('input[type="password"]');
+        if (!stillHasForm) {
+          resolved = true;
+          observer.disconnect();
+          Utils.log('Learning mode: password field gone — login appears successful (SPA)');
+          handleLearningSuccess();
         }
       });
+
+      observer.observe(document.body, { childList: true, subtree: true });
+
+      // Fallback timeout after 5 seconds — disconnect observer and check once
+      setTimeout(() => {
+        if (resolved) return;
+        observer.disconnect();
+        Utils.log('Learning mode: observer timeout — checking manually');
+        watchForLoginSuccess();
+      }, 5000);
+    }
+
+    /**
+     * Called by observer when login form disappears.
+     */
+    function handleLearningSuccess() {
+      const capturedData = getLearningCredentials();
+      if (!capturedData) {
+        Utils.log('Learning mode: observer fired but no credentials captured');
+        return;
+      }
+
+      if (Utils.askConsent('Login successful. Save credentials for future automatic login?')) {
+        chrome.runtime.sendMessage({
+          action: 'saveCredentials',
+          origin: currentOrigin,
+          fields: capturedData.fields
+        }, (response) => {
+          if (response && response.success) {
+            Utils.showNotification('Credentials Saved', 'SSO is now enabled for this application.');
+            Utils.log('Credentials saved (SPA observer mode)');
+          } else {
+            Utils.log('Failed to save credentials:', response ? response.error : 'No response');
+          }
+        });
+      }
+
+      clearLearningCredentials();
+      clearLoginSchema();
     }
   }
   
@@ -596,15 +679,46 @@
       return;
     }
     
-    // Check for login form
+    // Check for login form — may not be in DOM yet on React/SPA sites
     const loginForm = findLoginForm();
     if (!loginForm) {
       // Check if we were in learning mode and login succeeded
       checkLearningSuccess();
+
+      // --- SPA FALLBACK: Watch for login form to appear dynamically ---
+      // React/Angular/Vue sites render forms AFTER page load.
+      // We observe DOM mutations and run the full flow once the form appears.
+      Utils.log('No login form yet — watching for dynamic form insertion (SPA)...');
+      let spaFormDetected = false;
+      const spaObserver = new MutationObserver(() => {
+        if (spaFormDetected) return;
+        if (findLoginForm()) {
+          spaFormDetected = true;
+          spaObserver.disconnect();
+          Utils.log('Login form appeared dynamically (SPA)');
+          runLoginFlow();
+        } else if (findPasswordChangeForm()) {
+          spaFormDetected = true;
+          spaObserver.disconnect();
+          handlePasswordChange();
+        }
+      });
+      spaObserver.observe(document.body, { childList: true, subtree: true });
+
+      // Stop watching after 10 seconds to avoid memory leaks
+      setTimeout(() => {
+        if (!spaFormDetected) {
+          spaObserver.disconnect();
+        }
+      }, 10000);
       return;
     }
     
     Utils.log('Login form detected');
+    runLoginFlow();
+  }
+
+  async function runLoginFlow() {
     
     // Request credentials from background
     chrome.runtime.sendMessage({
