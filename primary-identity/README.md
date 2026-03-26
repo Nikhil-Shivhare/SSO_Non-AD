@@ -26,6 +26,16 @@ Server runs at: **http://localhost:4000**
 - Extension bootstrap API
 - Token introspection
 - User ↔ App access control
+- **Rate limiting & brute force protection** (`express-rate-limit`)
+
+## Security
+
+| Endpoint      | Limit                       | Behavior on Exceed                           |
+| ------------- | --------------------------- | -------------------------------------------- |
+| `POST /login` | 5 requests / 15 min per IP  | HTTP 429 — "Too many login attempts"         |
+| `/api/*`      | 100 requests / 15 min per IP| HTTP 429 — "Too many requests. Please slow down." |
+
+Headers `RateLimit-*` are returned on every request so clients can inspect usage.
 
 ## API Reference
 

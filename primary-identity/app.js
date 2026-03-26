@@ -14,6 +14,7 @@
 
 const express = require('express');
 const session = require('express-session');
+const rateLimit = require('express-rate-limit');
 const db = require('./db');
 const vaultClient = require('./vaultClient');
 
@@ -21,11 +22,35 @@ const app = express();
 const PORT = 4000;
 
 // ============================================================================
+// RATE LIMITING
+// ============================================================================
+
+// Strict limiter for login: 5 attempts per 15 minutes per IP
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    message: { error: 'Too many login attempts. Please try again after 15 minutes.' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+// General API limiter: 100 requests per 15 minutes per IP
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    message: { error: 'Too many requests. Please slow down.' },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+// ============================================================================
 // MIDDLEWARE
 // ============================================================================
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+app.use('/login', loginLimiter);      // Brute force protection on login
+app.use('/api', apiLimiter);          // General API rate limiting
 
 // Session configuration
 app.use(session({

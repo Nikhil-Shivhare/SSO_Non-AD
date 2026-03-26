@@ -615,6 +615,7 @@ User A logs out → User B logs into Primary Identity
 - ✅ User→App access control (user_apps mapping)
 - ✅ Session validation before every sensitive operation
 - ✅ CSRF protection (App-B demonstrates this)
+- ✅ Rate limiting & brute force protection on `/login` (5 req/15min) and `/api/*` (100 req/15min)
 
 ---
 
@@ -622,7 +623,6 @@ User A logs out → User B logs into Primary Identity
 
 ### Production Hardening
 
-- [ ] Replace Primary Identity with **Keycloak** integration
 - [ ] Move credential vault to **HashiCorp Vault** or **Azure Key Vault**
 - [ ] Encrypt passwords at rest (AES-256-GCM)
 - [ ] Use **JWT** tokens with proper signing and claims
@@ -633,7 +633,6 @@ User A logs out → User B logs into Primary Identity
 
 - [ ] MFA (Multi-Factor Authentication) handling
 - [ ] Token refresh scheduling with exponential backoff
-- [ ] Rate limiting on API endpoints
 - [ ] Extension popup UI for status and settings
 - [ ] Support for more form types (OTP, captcha bypass, etc.)
 - [ ] Audit logging for credential access
@@ -687,5 +686,3 @@ This project is a Proof of Concept developed for internal evaluation purposes.
 ## 👤 Author
 
 **Nikhil Shivhare**
-
-Built at **Accops** as a demonstration of Non-AD SSO capabilities for legacy web applications.

@@ -118,6 +118,7 @@ Separating the credential store from Primary Identity (PID) into a dedicated Vau
 | Login form detection + filling     | Extension     | Extension    | No change                                              |
 | Learning mode (credential capture) | Extension     | Extension    | No change                                              |
 | Password change detection          | Extension     | Extension    | No change                                              |
+| **Rate limiting (brute force)**    | **PID**       | **PID**      | **Implemented** — 5 req/15min on `/login`, 100 on `/api/*` |
 
 ---
 
