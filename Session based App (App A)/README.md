@@ -19,7 +19,7 @@ This app simulates a traditional legacy application with:
 ## Installation
 
 ```bash
-cd APP1
+cd "Session based App (App A)"
 npm install
 ```
 

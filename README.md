@@ -193,10 +193,10 @@ TEST3(new start)/
 ```bash
 # Install all dependencies at once
 cd primary-identity && npm install && cd ..
-cd APP1 && npm install && cd ..
-cd APP2 && npm install && cd ..
-cd APP3 && npm install && cd ..
-cd APP4 && npm install && cd ..
+cd "Session based App (App A)" && npm install && cd ..
+cd "Session + CSRF App (App B)" && npm install && cd ..
+cd "Stateless App (App C)" && npm install && cd ..
+cd "Role-based login App (App D)" && npm install && cd ..
 cd launcher && npm install && cd ..
 ```
 
@@ -662,10 +662,10 @@ sqlite3 primary-identity/database.sqlite \
 
 ```bash
 tail -f /tmp/primary-identity.log   # Primary Identity
-tail -f /tmp/app1.log               # App-A
-tail -f /tmp/app2.log               # App-B
-tail -f /tmp/app3.log               # App-C
-tail -f /tmp/app4.log               # App-D
+tail -f /tmp/app1.log               # Session based App (App A)
+tail -f /tmp/app2.log               # Session + CSRF App (App B)
+tail -f /tmp/app3.log               # Stateless App (App C)
+tail -f /tmp/app4.log               # Role-based login App (App D)
 ```
 
 ### Manage Services

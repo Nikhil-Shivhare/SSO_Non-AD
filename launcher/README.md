@@ -45,7 +45,7 @@ The launcher provides links to:
 
 ## Usage
 
-1. Start all three legacy apps (APP1, APP2, APP3)
+1. Start all three legacy apps (App A, App B, App C)
 2. Start the launcher
 3. Open http://localhost:3000 in your browser
 4. Click on any app link to launch it in a new tab

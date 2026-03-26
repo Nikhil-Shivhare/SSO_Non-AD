@@ -20,7 +20,7 @@ This app simulates a traditional legacy application with enhanced security:
 ## Installation
 
 ```bash
-cd APP2
+cd "Session + CSRF App (App B)"
 npm install
 ```
 

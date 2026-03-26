@@ -28,7 +28,7 @@ This tests whether SSO extensions can handle **non-standard form fields** beyond
 ## Installation
 
 ```bash
-cd APP4
+cd "Role-based login App (App D)"
 npm install
 ```
 

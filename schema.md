@@ -98,11 +98,11 @@ Role-based:
 
 ---
 
-## 3. Target Apps (APP1-4) — SQLite
+## 3. Target Apps (App A-D) — SQLite
 
-**Database:** `APP1/database.sqlite`, `APP2/database.sqlite`, etc.
+**Database:** "Session based App (App A)/database.sqlite", "Session + CSRF App (App B)/database.sqlite", etc.
 
-### 3.1 users (APP1, APP2, APP3, APP4)
+### 3.1 users (App A, App B, App C, App D)
 
 | Column       | Type    | Constraints      | Description         |
 | ------------ | ------- | ---------------- | ------------------- |
@@ -113,7 +113,7 @@ Role-based:
 
 ### 3.2 Additional Tables
 
-#### APP4 (Role-based)
+#### Role-based login App (App D) (Role-based)
 
 | Column | Type | Constraints | Description |
 | ------ | ---- | ----------- | ----------- |

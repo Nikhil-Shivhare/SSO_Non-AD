@@ -29,24 +29,24 @@ echo "▶️  Starting Primary Identity (port 4000)..."
 (cd primary-identity && npm start > /tmp/primary-identity.log 2>&1 &)
 sleep 2
 
-# Start APP1
-echo "▶️  Starting APP1 (port 3001)..."
-(cd APP1 && node app.js > /tmp/app1.log 2>&1 &)
+# Start Session based App (App A)
+echo "▶️  Starting Session based App (App A) (port 3001)..."
+(cd "Session based App (App A)" && node app.js > /tmp/app1.log 2>&1 &)
 sleep 1
 
-# Start APP2
-echo "▶️  Starting APP2 (port 3002)..."
-(cd APP2 && node app.js > /tmp/app2.log 2>&1 &)
+# Start Session + CSRF App (App B)
+echo "▶️  Starting Session + CSRF App (App B) (port 3002)..."
+(cd "Session + CSRF App (App B)" && node app.js > /tmp/app2.log 2>&1 &)
 sleep 1
 
-# Start APP3
-echo "▶️  Starting APP3 (port 3003)..."
-(cd APP3 && node app.js > /tmp/app3.log 2>&1 &)
+# Start Stateless App (App C)
+echo "▶️  Starting Stateless App (App C) (port 3003)..."
+(cd "Stateless App (App C)" && node app.js > /tmp/app3.log 2>&1 &)
 sleep 1
 
-# Start APP4
-echo "▶️  Starting APP4 (port 3004)..."
-(cd APP4 && node app.js > /tmp/app4.log 2>&1 &)
+# Start Role-based login App (App D)
+echo "▶️  Starting Role-based login App (App D) (port 3004)..."
+(cd "Role-based login App (App D)" && node app.js > /tmp/app4.log 2>&1 &)
 sleep 1
 
 # Start Launcher
@@ -73,10 +73,10 @@ check_service() {
 
 check_service 5000 "Vault Service"
 check_service 4000 "Primary Identity"
-check_service 3001 "APP1"
-check_service 3002 "APP2"
-check_service 3003 "APP3"
-check_service 3004 "APP4"
+check_service 3001 "Session based App (App A)"
+check_service 3002 "Session + CSRF App (App B)"
+check_service 3003 "Stateless App (App C)"
+check_service 3004 "Role-based login App (App D)"
 check_service 3100 "Launcher"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -84,10 +84,10 @@ echo ""
 echo "📝 Logs are saved in /tmp/"
 echo "   - Vault Service: /tmp/vault-service.log"
 echo "   - Primary Identity: /tmp/primary-identity.log"
-echo "   - APP1: /tmp/app1.log"
-echo "   - APP2: /tmp/app2.log"
-echo "   - APP3: /tmp/app3.log"
-echo "   - APP4: /tmp/app4.log"
+echo "   - Session based App (App A): /tmp/app1.log"
+echo "   - Session + CSRF App (App B): /tmp/app2.log"
+echo "   - Stateless App (App C): /tmp/app3.log"
+echo "   - Role-based login App (App D): /tmp/app4.log"
 echo "   - Launcher: /tmp/launcher.log"
 echo ""
 echo "🔍 To view logs: tail -f /tmp/primary-identity.log"

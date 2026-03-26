@@ -19,7 +19,7 @@ This app simulates a very old legacy application that:
 ## Installation
 
 ```bash
-cd APP3
+cd "Stateless App (App C)"
 npm install
 ```
 

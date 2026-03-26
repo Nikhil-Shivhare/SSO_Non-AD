@@ -10,6 +10,8 @@ const SALT_ROUNDS = 10;
 
 // Middleware
 app.use(express.urlencoded({ extended: true }));
+// Serve shared UI assets
+app.use('/shared', express.static(path.join(__dirname, '../shared-ui')));
 
 // Session configuration
 app.use(session({
@@ -117,20 +119,9 @@ const loginPage = (error = '') => `
 <html>
 <head>
     <title>App-D Login</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 500px; margin: 50px auto; padding: 20px; }
-        h1 { color: #333; }
-        .note { background: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin-bottom: 20px; font-size: 13px; }
-        form { background: #f8f9fa; padding: 20px; border-radius: 5px; }
-        label { display: block; margin: 15px 0 5px 0; font-weight: bold; color: #555; }
-        input, select { display: block; margin: 5px 0 15px 0; padding: 8px; width: 100%; box-sizing: border-box; }
-        button { padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; width: 100%; }
-        button:hover { background: #0056b3; }
-        .error { color: red; padding: 10px; background: #ffe6e6; border-radius: 5px; margin-bottom: 15px; }
-        .seed-info { background: #e7f3ff; padding: 10px; border-radius: 5px; margin-top: 20px; font-size: 12px; }
-        .seed-info table { width: 100%; margin-top: 10px; border-collapse: collapse; }
-        .seed-info th, .seed-info td { text-align: left; padding: 5px; border-bottom: 1px solid #ddd; }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/theme.css">
+    <script src="/shared/app-features.js" defer></script>
 </head>
 <body>
     <h1>App-D - Role-Based Legacy App</h1>
@@ -181,19 +172,9 @@ const dashboardPage = (username, role, displayName) => `
 <html>
 <head>
     <title>App-D Dashboard - ${role.toUpperCase()}</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
-        h1 { color: #333; }
-        .welcome { background: #e7f3ff; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
-        .role-badge { display: inline-block; padding: 5px 15px; border-radius: 15px; font-size: 12px; font-weight: bold; color: white; text-transform: uppercase; }
-        .role-badge.admin { background: #dc3545; }
-        .role-badge.hr { background: #007bff; }
-        .role-badge.intern { background: #28a745; }
-        .role-badge.external { background: #ffc107; color: #333; }
-        .menu { background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
-        .menu a { display: block; margin: 10px 0; color: #007bff; text-decoration: none; }
-        .menu a:hover { text-decoration: underline; }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/theme.css">
+    <script src="/shared/app-features.js" defer></script>
 </head>
 <body>
     <h1>App-D Dashboard <span class="role-badge ${role}">${role}</span></h1>
@@ -217,17 +198,9 @@ const changePasswordPage = (username, error = '', success = '') => `
 <html>
 <head>
     <title>App-D Change Password</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 500px; margin: 50px auto; padding: 20px; }
-        h1 { color: #333; }
-        form { background: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
-        input { display: block; margin: 10px 0; padding: 8px; width: 100%; box-sizing: border-box; }
-        button { padding: 10px 20px; background: #ffc107; color: #333; border: none; cursor: pointer; width: 100%; }
-        button:hover { background: #e0a800; }
-        .error { color: red; padding: 10px; background: #ffe6e6; border-radius: 5px; margin-bottom: 10px; }
-        .success { color: green; padding: 10px; background: #e6ffe6; border-radius: 5px; margin-bottom: 10px; }
-        a { color: #007bff; }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/theme.css">
+    <script src="/shared/app-features.js" defer></script>
 </head>
 <body>
     <h1>Change Password</h1>
@@ -248,18 +221,9 @@ const registerPage = (error = '') => `
 <html>
 <head>
     <title>App-D Register</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 500px; margin: 50px auto; padding: 20px; }
-        h1 { color: #333; }
-        .note { background: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin-bottom: 20px; font-size: 13px; }
-        form { background: #f8f9fa; padding: 20px; border-radius: 5px; }
-        label { display: block; margin: 15px 0 5px 0; font-weight: bold; color: #555; }
-        input, select { display: block; margin: 5px 0 15px 0; padding: 8px; width: 100%; box-sizing: border-box; }
-        button { padding: 10px 20px; background: #28a745; color: white; border: none; cursor: pointer; width: 100%; }
-        button:hover { background: #218838; }
-        .error { color: red; padding: 10px; background: #ffe6e6; border-radius: 5px; margin-bottom: 15px; }
-        a { color: #007bff; }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/theme.css">
+    <script src="/shared/app-features.js" defer></script>
 </head>
 <body>
     <h1>App-D - Register New User</h1>

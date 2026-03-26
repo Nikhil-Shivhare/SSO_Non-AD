@@ -12,6 +12,8 @@ const SALT_ROUNDS = 10;
 
 // Middleware
 app.use(express.urlencoded({ extended: true }));
+// Serve shared UI assets
+app.use('/shared', express.static(path.join(__dirname, '../shared-ui')));
 app.use(cookieParser()); // Required for CSRF
 
 // Session configuration
@@ -57,17 +59,9 @@ const loginPage = (csrfToken, error = '') => `
 <html>
 <head>
     <title>App-B Login</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 400px; margin: 50px auto; padding: 20px; }
-        h1 { color: #333; }
-        form { margin-bottom: 20px; }
-        input { display: block; margin: 10px 0; padding: 8px; width: 100%; box-sizing: border-box; }
-        button { padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; }
-        button:hover { background: #0056b3; }
-        .error { color: red; padding: 10px; background: #ffe6e6; border-radius: 5px; margin-bottom: 10px; }
-        a { color: #007bff; }
-        .csrf-note { font-size: 11px; color: #666; margin-top: 10px; }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/theme.css">
+    <script src="/shared/app-features.js" defer></script>
 </head>
 <body>
     <h1>App-B - Session + CSRF Legacy App</h1>
@@ -90,18 +84,9 @@ const registerPage = (csrfToken, error = '', success = '') => `
 <html>
 <head>
     <title>App-B Register</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 400px; margin: 50px auto; padding: 20px; }
-        h1 { color: #333; }
-        form { margin-bottom: 20px; }
-        input { display: block; margin: 10px 0; padding: 8px; width: 100%; box-sizing: border-box; }
-        button { padding: 10px 20px; background: #28a745; color: white; border: none; cursor: pointer; }
-        button:hover { background: #1e7e34; }
-        .error { color: red; padding: 10px; background: #ffe6e6; border-radius: 5px; margin-bottom: 10px; }
-        .success { color: green; padding: 10px; background: #e6ffe6; border-radius: 5px; margin-bottom: 10px; }
-        a { color: #007bff; }
-        .csrf-note { font-size: 11px; color: #666; margin-top: 10px; }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/theme.css">
+    <script src="/shared/app-features.js" defer></script>
 </head>
 <body>
     <h1>App-B - Register</h1>
@@ -124,16 +109,9 @@ const dashboardPage = (username) => `
 <html>
 <head>
     <title>App-B Dashboard</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
-        h1 { color: #333; }
-        .welcome { background: #e7f3ff; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
-        .menu { background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
-        .menu a { display: block; margin: 10px 0; color: #007bff; text-decoration: none; }
-        .menu a:hover { text-decoration: underline; }
-        .note { color: #666; font-size: 12px; margin-top: 20px; }
-        .security-badge { background: #28a745; color: white; padding: 5px 10px; border-radius: 3px; font-size: 11px; display: inline-block; margin-top: 10px; }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/theme.css">
+    <script src="/shared/app-features.js" defer></script>
 </head>
 <body>
     <h1>App-B Dashboard</h1>
@@ -159,18 +137,9 @@ const changePasswordPage = (csrfToken, username, error = '', success = '') => `
 <html>
 <head>
     <title>App-B Change Password</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 500px; margin: 50px auto; padding: 20px; }
-        h1 { color: #333; }
-        form { background: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
-        input { display: block; margin: 10px 0; padding: 8px; width: 100%; box-sizing: border-box; }
-        button { padding: 10px 20px; background: #ffc107; color: #333; border: none; cursor: pointer; }
-        button:hover { background: #e0a800; }
-        .error { color: red; padding: 10px; background: #ffe6e6; border-radius: 5px; margin-bottom: 10px; }
-        .success { color: green; padding: 10px; background: #e6ffe6; border-radius: 5px; margin-bottom: 10px; }
-        a { color: #007bff; }
-        .csrf-note { font-size: 11px; color: #666; margin-top: 10px; }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/theme.css">
+    <script src="/shared/app-features.js" defer></script>
 </head>
 <body>
     <h1>Change Password</h1>

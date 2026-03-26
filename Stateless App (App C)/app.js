@@ -9,6 +9,8 @@ const SALT_ROUNDS = 10;
 
 // Middleware
 app.use(express.urlencoded({ extended: true }));
+// Serve shared UI assets
+app.use('/shared', express.static(path.join(__dirname, '../shared-ui')));
 
 // Database setup
 const db = new sqlite3.Database(path.join(__dirname, "database.sqlite"));
@@ -27,17 +29,9 @@ const loginPage = `
 <html>
 <head>
     <title>App-C Login</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 400px; margin: 50px auto; padding: 20px; }
-        h1 { color: #333; }
-        form { margin-bottom: 20px; }
-        input { display: block; margin: 10px 0; padding: 8px; width: 100%; box-sizing: border-box; }
-        button { padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; }
-        button:hover { background: #0056b3; }
-        .error { color: red; }
-        .success { color: green; }
-        a { color: #007bff; }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/theme.css">
+    <script src="/shared/app-features.js" defer></script>
 </head>
 <body>
     <h1>App-C - Stateless Legacy App</h1>
@@ -57,15 +51,9 @@ const registerPage = `
 <html>
 <head>
     <title>App-C Register</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 400px; margin: 50px auto; padding: 20px; }
-        h1 { color: #333; }
-        form { margin-bottom: 20px; }
-        input { display: block; margin: 10px 0; padding: 8px; width: 100%; box-sizing: border-box; }
-        button { padding: 10px 20px; background: #28a745; color: white; border: none; cursor: pointer; }
-        button:hover { background: #1e7e34; }
-        a { color: #007bff; }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/theme.css">
+    <script src="/shared/app-features.js" defer></script>
 </head>
 <body>
     <h1>App-C - Register</h1>
@@ -85,17 +73,9 @@ function dashboardPage(username) {
 <html>
 <head>
     <title>App-C Dashboard</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
-        h1 { color: #333; }
-        .welcome { background: #e7f3ff; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
-        form { background: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
-        input { display: block; margin: 10px 0; padding: 8px; width: 100%; box-sizing: border-box; }
-        button { padding: 10px 20px; background: #ffc107; color: #333; border: none; cursor: pointer; }
-        button:hover { background: #e0a800; }
-        .note { color: #666; font-size: 12px; margin-top: 20px; }
-        a { color: #007bff; }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/theme.css">
+    <script src="/shared/app-features.js" defer></script>
 </head>
 <body>
     <h1>App-C Dashboard</h1>
@@ -126,11 +106,9 @@ function messagePage(title, message, isError = false) {
 <html>
 <head>
     <title>App-C - ${title}</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 400px; margin: 50px auto; padding: 20px; }
-        .message { color: ${color}; padding: 15px; border: 1px solid ${color}; border-radius: 5px; }
-        a { color: #007bff; display: block; margin-top: 20px; }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/shared/theme.css">
+    <script src="/shared/app-features.js" defer></script>
 </head>
 <body>
     <h1>${title}</h1>
