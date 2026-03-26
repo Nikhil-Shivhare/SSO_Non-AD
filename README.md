@@ -117,14 +117,20 @@ All credentials are stored centrally in a **Primary Identity Service** (credenti
 ## 📁 Project Structure
 
 ```
-TEST3(new start)/
+SSO_Non-AD/
 │
-├── primary-identity/          # Central identity & credential vault service
-│   ├── app.js                 # Express server with all API endpoints
-│   ├── db.js                  # SQLite database setup, seed data, queries
-│   ├── database.sqlite        # Auto-generated database file
-│   ├── package.json           # Dependencies
-│   └── README.md              # Primary Identity documentation
+├── PID/                           # Primary Identity Service (Python/FastAPI)
+│   ├── app.py                     # FastAPI server — all 19 routes
+│   ├── database.py                # SQLite setup, queries, password policy
+│   ├── vault_client.py            # Async Vault HTTP proxy client
+│   ├── database.sqlite            # Auto-generated database file
+│   ├── templates/                 # Jinja2 HTML templates
+│   │   ├── base.html              # Shared layout
+│   │   ├── login.html             # Login page
+│   │   ├── dashboard.html         # User dashboard
+│   │   └── admin.html             # Admin panel (users, apps, password policy)
+│   ├── venv/                      # Python virtual environment
+│   └── requirements.txt           # Python dependencies
 │
 ├── sso-extension/             # Chrome browser extension
 │   ├── manifest.json          # Extension configuration (Manifest V3)
@@ -157,11 +163,12 @@ TEST3(new start)/
 ├── launcher/                  # App launcher UI (port 3100)
 │   └── app.js                 # Simple Express server with navigation links
 │
+├── vault-service/             # Vault Service (Docker)
+│   └── docker-compose.yml
+│
 ├── start-all.sh               # Start all services at once
 ├── stop-all.sh                # Stop all services
-├── CREDENTIAL_ARCHITECTURE.md # Detailed credential storage documentation
-├── CREDENTIAL_SCHEMA.md       # Schema-driven credential format docs
-├── COMMANDS.md                # Useful commands reference
+├── VAULT_ARCHITECTURE.md      # Vault/PID architecture documentation
 └── README.md                  # ← You are here
 ```
 
@@ -169,14 +176,16 @@ TEST3(new start)/
 
 ## 🛠 Tech Stack
 
-| Component         | Technology                   |
-| ----------------- | ---------------------------- |
-| Backend           | Node.js + Express            |
-| Database          | SQLite3                      |
-| Authentication    | express-session + bcrypt     |
-| Browser Extension | Chrome Extension Manifest V3 |
-| Language          | JavaScript                   |
-| CSRF Protection   | csurf (App-B)                |
+| Component         | Technology                        |
+| ----------------- | --------------------------------- |
+| **PID Backend**   | **Python 3.11 + FastAPI + Uvicorn** |
+| Database          | SQLite3                           |
+| Authentication    | Starlette SessionMiddleware + bcrypt |
+| Rate Limiting     | slowapi (10 POST /login/15min, 100 API/15min) |
+| Browser Extension | Chrome Extension Manifest V3      |
+| Language (PID)    | **Python**                        |
+| Language (Apps)   | JavaScript (Node.js)              |
+| CSRF Protection   | csurf (App-B)                     |
 
 ---
 
@@ -184,15 +193,19 @@ TEST3(new start)/
 
 ### Prerequisites
 
-- **Node.js** v16+ installed
+- **Python 3.11+** installed
+- **Node.js** v16+ (for demo apps and launcher)
+- **Docker** (for Vault Service)
 - **Google Chrome** browser
 - **SQLite3** (for debugging/inspection, optional)
 
 ### 1. Install Dependencies
 
 ```bash
-# Install all dependencies at once
-cd primary-identity && npm install && cd ..
+# PID — Python virtual environment (first time only)
+cd PID && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt && cd ..
+
+# Demo apps (Node.js)
 cd "Session based App (App A)" && npm install && cd ..
 cd "Session + CSRF App (App B)" && npm install && cd ..
 cd "Stateless App (App C)" && npm install && cd ..
@@ -610,12 +623,13 @@ User A logs out → User B logs into Primary Identity
 ### Security Features Implemented
 
 - ✅ User session isolation (prevents credential leakage)
-- ✅ Cascade logout on user switch
+- ✅ Cascade logout on user switch (all plugin tokens revoked)
 - ✅ Token-based API authentication
 - ✅ User→App access control (user_apps mapping)
 - ✅ Session validation before every sensitive operation
 - ✅ CSRF protection (App-B demonstrates this)
-- ✅ Rate limiting & brute force protection on `/login` (5 req/15min) and `/api/*` (100 req/15min)
+- ✅ Rate limiting & brute force protection on `POST /login` (10 req/15min — page views excluded) and `/api/*` (100 req/15min)
+- ✅ **Customizable Password Policy** — admin can configure min length, uppercase, lowercase, digit, special char requirements, and disable the policy entirely from the admin dashboard
 
 ---
 
@@ -652,9 +666,14 @@ User A logs out → User B logs into Primary Identity
 ### View All Stored Credentials
 
 ```bash
-sqlite3 primary-identity/database.sqlite \
-  "SELECT u.username, vc.app_id, vc.app_username, vc.app_password, vc.extra_fields \
-   FROM vault_credentials vc JOIN users u ON vc.user_id = u.id;"
+# View all users
+sqlite3 PID/database.sqlite "SELECT id, username, role, vault_id FROM users;"
+
+# View password policy
+sqlite3 PID/database.sqlite "SELECT * FROM password_policy;"
+
+# View plugin tokens
+sqlite3 PID/database.sqlite "SELECT * FROM plugin_tokens;"
 ```
 
 ### View Logs
@@ -670,9 +689,10 @@ tail -f /tmp/app4.log               # Role-based login App (App D)
 ### Manage Services
 
 ```bash
-./start-all.sh          # Start all services
+./start-all.sh          # Start all services (Python PID + Node.js apps + Vault)
 ./stop-all.sh           # Stop all services
-pkill -f 'node app.js'  # Force kill all Node processes
+pkill -f 'python app.py'  # Force kill Python PID
+pkill -f 'node app.js'    # Force kill Node demo apps
 ```
 
 ---

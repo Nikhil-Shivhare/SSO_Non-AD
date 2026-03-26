@@ -108,17 +108,17 @@ Separating the credential store from Primary Identity (PID) into a dedicated Vau
 | App registration + login_schema    | PID           | PID          | No change — login_schema stays in PID                  |
 | User ↔ App assignment (policy)     | PID           | PID          | No change                                              |
 | Plugin token issuance + validation | PID           | PID          | No change                                              |
-| appId → vault_id resolution        | PID (db.js)   | PID          | PID maps appId string to vault_id before calling Vault |
-| Bearer token validation            | PID (app.js)  | PID          | No change — Vault never validates tokens               |
-| Credential storage (CRUD)          | PID (db.js)   | **Vault**    | **Moved** — physically separated                       |
+| appId → vault_id resolution        | PID (database.py)| PID          | PID maps appId string to vault_id before calling Vault |
+| Bearer token validation            | PID (app.py)  | PID          | No change — Vault never validates tokens               |
+| Credential storage (CRUD)          | PID (database.py)| **Vault**    | **Moved** — physically separated                       |
 | Credential encryption              | None (PoC)    | **Vault**    | **New** — Vault owns encryption layer                  |
 | Audit logging (credential access)  | None          | **Vault**    | **New** — Vault logs all credential operations         |
-| Cascade delete on user removal     | PID (db.js)   | PID → Vault  | PID must call Vault to delete credentials              |
-| Seed data (initial credentials)    | PID (db.js)   | PID → Vault  | PID seeds via Vault API during bootstrap               |
+| Cascade delete on user removal     | PID (database.py)| PID → Vault  | PID must call Vault to delete credentials              |
+| Seed data (initial credentials)    | PID (database.py)| PID → Vault  | PID seeds via Vault API during bootstrap               |
 | Login form detection + filling     | Extension     | Extension    | No change                                              |
 | Learning mode (credential capture) | Extension     | Extension    | No change                                              |
 | Password change detection          | Extension     | Extension    | No change                                              |
-| **Rate limiting (brute force)**    | **PID**       | **PID**      | **Implemented** — 5 req/15min on `/login`, 100 on `/api/*` |
+| **Rate limiting (brute force)**    | **PID**       | **PID**      | **Implemented** — 10 req/15min on `POST /login`, 100 on `/api/*` |
 
 ---
 
