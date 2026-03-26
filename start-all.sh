@@ -24,9 +24,9 @@ else
     echo "   ⚠️  Vault Service may not be ready yet"
 fi
 
-# Start Primary Identity
+# Start Primary Identity (Python/FastAPI)
 echo "▶️  Starting Primary Identity (port 4000)..."
-(cd primary-identity && npm start > /tmp/primary-identity.log 2>&1 &)
+(cd primary-identity-python && source venv/bin/activate && python app.py > /tmp/primary-identity.log 2>&1 &)
 sleep 2
 
 # Start Session based App (App A)

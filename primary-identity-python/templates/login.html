@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+    <h1>Primary Identity - Login</h1>
+    <p>This is the central identity provider for SSO PoC.</p>
+
+    {% if error %}
+    <div class="error message">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST" action="/login">
+        <label>Username:</label>
+        <input type="text" name="username" required autofocus>
+        <label>Password:</label>
+        <input type="password" name="password" required>
+        <button type="submit">Login</button>
+    </form>
+    <div class="info message">
+        <strong>Demo Credentials:</strong><br>
+        Admin: <code>admin</code> / <code>admin123</code><br>
+        User: <code>testuser</code> / <code>TestPass123!</code>
+    </div>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+    <nav>
+        <a href="/dashboard">Dashboard</a>
+        {% if role == 'admin' %}<a href="/admin">Admin Panel</a>{% endif %}
+        <a href="/logout">Logout</a>
+    </nav>
+
+    <h1>Welcome, {{ username }}!</h1>
+    <p>Role: <span class="badge badge-{{ role }}">{{ role }}</span></p>
+
+    <h2>Your Assigned Apps</h2>
+    <table>
+        <tr><th>App ID</th><th>Origin</th><th>Action</th></tr>
+        {% if apps %}
+            {% for app in apps %}
+            <tr>
+                <td>{{ app.appId }}</td>
+                <td>{{ app.origin }}</td>
+                <td><a href="{{ app.origin }}/login" target="_blank">Open</a></td>
+            </tr>
+            {% endfor %}
+        {% else %}
+            <tr><td colspan="3">No apps assigned</td></tr>
+        {% endif %}
+    </table>
+
+    <h2>SSO Extension Status</h2>
+    <p>If you have the browser extension installed, it will automatically use your Primary Identity session to login to assigned apps.</p>
+    <div class="info message">
+        <strong>How it works:</strong>
+        <ol>
+            <li>Extension calls <code>POST /api/plugin/bootstrap</code> with your session cookie</li>
+            <li>Server returns a <code>pluginToken</code> and list of allowed apps</li>
+            <li>Extension uses token to fetch credentials from vault</li>
+            <li>Extension auto-fills and submits login forms</li>
+        </ol>
+    </div>
+{% endblock %}
