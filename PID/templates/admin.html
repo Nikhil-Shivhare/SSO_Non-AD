@@ -6,169 +6,504 @@
         <a href="/logout">Logout</a>
     </nav>
 
-    <h1>Admin Panel</h1>
+    <style>
+        body { max-width: 100%; margin: 0; padding: 0; }
 
-    {% if message %}
-    <div class="success message">{{ message }}</div>
-    {% endif %}
-    {% if error %}
-    <div class="error message">{{ error }}</div>
-    {% endif %}
+        .admin-layout {
+            display: grid;
+            grid-template-columns: 220px 1fr;
+            gap: 0;
+            min-height: calc(100vh - 50px);
+        }
 
-    <h2>Users</h2>
-    <table>
-        <tr><th>Username</th><th>Role</th><th>Status</th><th>Assigned Apps</th><th>Actions</th></tr>
-        {% for user in users %}
-        <tr>
-            <td>{{ user.username }}</td>
-            <td><span class="badge badge-{{ user.role }}">{{ user.role }}</span></td>
-            <td>
-                {% if user.is_active %}
-                <span class="badge" style="background:#28a745;color:white;">Active</span>
-                {% else %}
-                <span class="badge" style="background:#dc3545;color:white;">Inactive</span>
-                {% endif %}
-            </td>
-            <td>{{ user.app_list }}</td>
-            <td>
-                {% if user.role != 'admin' %}
-                <form method="POST" action="/admin/users/{{ user.id }}/toggle" style="display:inline;">
-                    {% if user.is_active %}
-                    <button type="submit" style="background:#ffc107;color:#333;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;">Deactivate</button>
+        /* Sidebar */
+        .sidebar {
+            background: #2c3e50;
+            position: sticky;
+            top: 0;
+            height: calc(100vh - 50px);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar-header {
+            padding: 18px 20px;
+            color: #ecf0f1;
+            font-size: 15px;
+            font-weight: 600;
+            border-bottom: 1px solid #34495e;
+            background: #1a252f;
+        }
+        .sidebar-nav { flex: 1; padding: 8px 0; }
+        .sidebar a {
+            display: block;
+            padding: 10px 20px;
+            color: #bdc3c7;
+            text-decoration: none;
+            font-size: 13px;
+            border-left: 3px solid transparent;
+            transition: all 0.15s;
+        }
+        .sidebar a:hover { background: #34495e; color: #fff; text-decoration: none; }
+        .sidebar a.active { background: #34495e; color: #fff; border-left-color: #3498db; }
+        .sidebar-divider { border-top: 1px solid #34495e; margin: 6px 0; }
+        .sidebar-footer {
+            border-top: 1px solid #34495e;
+            background: #1a252f;
+            padding: 4px 0;
+        }
+
+        /* Main content */
+        .main-content {
+            padding: 28px 32px;
+            overflow-y: auto;
+            max-height: calc(100vh - 50px);
+            background: #f5f6fa;
+        }
+        .main-content h1 { margin-top: 0; font-size: 22px; color: #2c3e50; }
+
+        /* Stat cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 14px;
+            margin: 12px 0 24px 0;
+        }
+        .stat-card {
+            background: #fff;
+            border: 1px solid #e0e4ea;
+            border-radius: 6px;
+            padding: 16px;
+            text-align: center;
+        }
+        .stat-card .stat-number { font-size: 26px; font-weight: 700; color: #2c3e50; }
+        .stat-card .stat-label { font-size: 11px; color: #7f8c8d; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .stat-card.blue { border-top: 3px solid #3498db; }
+        .stat-card.green { border-top: 3px solid #27ae60; }
+        .stat-card.red { border-top: 3px solid #e74c3c; }
+        .stat-card.orange { border-top: 3px solid #f39c12; }
+        .stat-card.purple { border-top: 3px solid #8e44ad; }
+
+        /* Sections */
+        .admin-section {
+            background: #fff;
+            border: 1px solid #e0e4ea;
+            border-radius: 6px;
+            padding: 20px 24px;
+            margin-bottom: 18px;
+            scroll-margin-top: 20px;
+        }
+        .admin-section h2 {
+            margin-top: 0;
+            font-size: 16px;
+            color: #2c3e50;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        /* Lighter, softer buttons */
+        .admin-section button,
+        .admin-section button[type="submit"] {
+            padding: 8px 18px;
+            border: 1px solid #d0d5dd;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.15s;
+        }
+        .btn-primary { background: #ebf5fb; color: #2980b9; border-color: #aed6f1; }
+        .btn-primary:hover { background: #d4e6f1; }
+        .btn-success { background: #eafaf1; color: #27ae60; border-color: #a9dfbf; }
+        .btn-success:hover { background: #d5f5e3; }
+        .btn-warning { background: #fef9e7; color: #b7950b; border-color: #f9e79f; }
+        .btn-warning:hover { background: #fdebd0; }
+        .btn-danger { background: #fdedec; color: #c0392b; border-color: #f5b7b1; }
+        .btn-danger:hover { background: #fadbd8; }
+        .btn-info { background: #e8f6f3; color: #16a085; border-color: #a2d9ce; }
+        .btn-info:hover { background: #d1f2eb; }
+
+        /* Forms inside sections */
+        .admin-section form { background: transparent; padding: 0; margin: 10px 0 0 0; }
+        .admin-section label { font-size: 13px; color: #555; }
+        .admin-section input, .admin-section select {
+            border: 1px solid #d0d5dd;
+            border-radius: 4px;
+            padding: 7px 10px;
+            font-size: 13px;
+        }
+
+        /* Tables */
+        .admin-section table { margin: 10px 0 0 0; }
+
+        /* Info grid */
+        .info-grid {
+            display: grid;
+            grid-template-columns: 140px 1fr;
+            gap: 6px 14px;
+            font-size: 13px;
+        }
+        .info-grid .info-label { font-weight: 600; color: #555; }
+        .info-grid .info-value { color: #2c3e50; }
+    </style>
+
+    <div class="admin-layout">
+        <!-- SIDEBAR -->
+        <div class="sidebar">
+            <div class="sidebar-header">Admin Menu</div>
+            <div class="sidebar-nav">
+                <a href="#overview" class="active">Overview</a>
+                <a href="#applications">Applications</a>
+                <a href="#users">Users</a>
+                <a href="#create-user">Create User</a>
+                <a href="#reset-password">Reset Password</a>
+                <a href="#assign-app">Assign App</a>
+                <a href="#remove-app">Remove App</a>
+                <a href="#password-policy">Password Policy</a>
+                <div class="sidebar-divider"></div>
+                <a href="#active-sessions">Active Sessions</a>
+                <a href="#system-info">System Info</a>
+            </div>
+            <div class="sidebar-footer">
+                <a href="/dashboard">← Dashboard</a>
+                <a href="/logout">Logout</a>
+            </div>
+        </div>
+
+        <!-- MAIN CONTENT -->
+        <div class="main-content">
+            <h1>Admin Panel</h1>
+
+            {% if message %}
+            <div class="success message">{{ message }}</div>
+            {% endif %}
+            {% if error %}
+            <div class="error message">{{ error }}</div>
+            {% endif %}
+
+            <!-- OVERVIEW -->
+            <div id="overview">
+                <div class="stats-grid">
+                    <div class="stat-card blue">
+                        <div class="stat-number">{{ stats.total_users }}</div>
+                        <div class="stat-label">Total Users</div>
+                    </div>
+                    <div class="stat-card green">
+                        <div class="stat-number">{{ stats.active_users }}</div>
+                        <div class="stat-label">Active Users</div>
+                    </div>
+                    <div class="stat-card red">
+                        <div class="stat-number">{{ stats.inactive_users }}</div>
+                        <div class="stat-label">Inactive</div>
+                    </div>
+                    <div class="stat-card orange">
+                        <div class="stat-number">{{ stats.total_apps }}</div>
+                        <div class="stat-label">Apps</div>
+                    </div>
+                    <div class="stat-card purple">
+                        <div class="stat-number">{{ stats.active_tokens }}</div>
+                        <div class="stat-label">Active Tokens</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- APPLICATIONS -->
+            <div class="admin-section" id="applications">
+                <h2>Applications</h2>
+                <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px; margin-top:12px;">
+                    {% for app in all_apps %}
+                    <div style="border:1px solid #e0e4ea; border-radius:6px; padding:16px; background:#fafbfc; position:relative;">
+                        {% if app.appId.startswith('app_') %}
+                        <span class="badge" style="position:absolute; top:16px; right:16px; background:#fef5e7; color:#e67e22; font-size:10px;">Demo</span>
+                        {% endif %}
+                        <div style="font-weight:600; font-size:15px; color:#2c3e50; margin-bottom:6px; padding-right:45px;">
+                            {% if app.appId == 'app_a' %}App A — Session-based app
+                            {% elif app.appId == 'app_b' %}App B — Session + CSRF app
+                            {% elif app.appId == 'app_c' %}App C — Stateless app (no session)
+                            {% elif app.appId == 'app_d' %}App D — Role-based login app
+                            {% else %}{{ app.appId }}
+                            {% endif %}
+                        </div>
+                        <div style="font-size:12px; margin-bottom:10px;">
+                            <a href="{{ app.origin }}" target="_blank" style="color:#2980b9;">{{ app.origin }}</a>
+                        </div>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <span class="badge" style="background:#eaf2f8; color:#2980b9;">{{ app.schema_type }}</span>
+                            <span style="font-size:12px; color:#7f8c8d;">{{ app.user_count }} user{{ 's' if app.user_count != 1 else '' }} assigned</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- USERS -->
+            <div class="admin-section" id="users">
+                <h2>Users</h2>
+                <table>
+                    <tr><th>Username</th><th>Role</th><th>Status</th><th>Assigned Apps</th><th>Actions</th></tr>
+                    {% for user in users %}
+                    <tr>
+                        <td>{{ user.username }}</td>
+                        <td><span class="badge badge-{{ user.role }}">{{ user.role }}</span></td>
+                        <td>
+                            {% if user.is_active %}
+                            <span class="badge" style="background:#27ae60;color:white;">Active</span>
+                            {% else %}
+                            <span class="badge" style="background:#e74c3c;color:white;">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ user.app_list }}</td>
+                        <td>
+                            {% if user.role != 'admin' %}
+                            <form method="POST" action="/admin/users/{{ user.id }}/toggle" style="display:inline;">
+                                {% if user.is_active %}
+                                <button type="submit" class="btn-warning">Deactivate</button>
+                                {% else %}
+                                <button type="submit" class="btn-success">Activate</button>
+                                {% endif %}
+                            </form>
+                            <form method="POST" action="/admin/users/{{ user.id }}/delete" style="display:inline;">
+                                <button type="submit" class="btn-danger" onclick="return confirm('Delete this user permanently?')">Delete</button>
+                            </form>
+                            {% else %}
+                            <span style="color:#95a5a6;">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+
+            <!-- CREATE USER -->
+            <div class="admin-section" id="create-user">
+                <h2>Create User</h2>
+                <form method="POST" action="/admin/users">
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; align-items:end;">
+                        <div>
+                            <label>Username</label>
+                            <input type="text" name="username" required placeholder="Enter username">
+                        </div>
+                        <div>
+                            <label>Password</label>
+                            <input type="password" name="password" required placeholder="Enter password">
+                        </div>
+                        <div>
+                            <label>Role</label>
+                            <select name="role">
+                                <option value="user">User</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="margin-top:14px;">
+                        <button type="submit" class="btn-primary">Create User</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- RESET PASSWORD -->
+            <div class="admin-section" id="reset-password">
+                <h2>Reset User Password</h2>
+                <form method="POST" action="" id="resetPasswordForm">
+                    <label>User:</label>
+                    <select name="userId" id="resetUserId" required onchange="document.getElementById('resetPasswordForm').action='/admin/users/' + this.value + '/reset-password'">
+                        <option value="">-- Select User --</option>
+                        {% for user in non_admin_users %}
+                        <option value="{{ user.id }}">{{ user.username }}</option>
+                        {% endfor %}
+                    </select>
+                    <label>New Password:</label>
+                    <input type="password" name="new_password" required placeholder="Enter new password">
+                    <button type="submit" class="btn-info">Reset Password</button>
+                </form>
+            </div>
+
+            <!-- ASSIGN APP -->
+            <div class="admin-section" id="assign-app">
+                <h2>Assign App to User</h2>
+                <form method="POST" action="/admin/assign-app">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:end;">
+                        <div>
+                            <label>User</label>
+                            <select name="userId" required>
+                                <option value="">-- Select User --</option>
+                                {% for user in non_admin_users %}
+                                <option value="{{ user.id }}">{{ user.username }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label>App</label>
+                            <select name="appId" required>
+                                <option value="">-- Select App --</option>
+                                <option value="__all__">All Apps</option>
+                                {% for app in all_apps %}
+                                <option value="{{ app.appId }}">{{ app.appId }} ({{ app.origin }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div style="margin-top:14px;">
+                        <button type="submit" class="btn-primary">Assign App</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- REMOVE APP -->
+            <div class="admin-section" id="remove-app">
+                <h2>Remove App from User</h2>
+                <form method="POST" action="/admin/remove-app">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:end;">
+                        <div>
+                            <label>User</label>
+                            <select name="userId" required>
+                                <option value="">-- Select User --</option>
+                                {% for user in non_admin_users %}
+                                <option value="{{ user.id }}">{{ user.username }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label>App</label>
+                            <select name="appId" required>
+                                <option value="">-- Select App --</option>
+                                <option value="__all__">All Apps</option>
+                                {% for app in all_apps %}
+                                <option value="{{ app.appId }}">{{ app.appId }} ({{ app.origin }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div style="margin-top:14px;">
+                        <button type="submit" class="btn-danger">Remove App</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- PASSWORD POLICY -->
+            <div class="admin-section" id="password-policy">
+                <h2>Password Policy
+                    {% if policy.enabled %}
+                    <span class="badge badge-admin">Enabled</span>
                     {% else %}
-                    <button type="submit" style="background:#28a745;color:white;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;">Activate</button>
+                    <span class="badge" style="background:#95a5a6;color:white;">Disabled</span>
                     {% endif %}
-                </form>
-                <form method="POST" action="/admin/users/{{ user.id }}/delete" style="display:inline;">
-                    <button type="submit" class="danger" onclick="return confirm('Delete this user permanently?')">Delete</button>
-                </form>
-                {% else %}
-                (Admin)
+                </h2>
+
+                {% if policy_message %}
+                <div class="success message">{{ policy_message }}</div>
                 {% endif %}
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
 
-    <h2>Create User</h2>
-    <form method="POST" action="/admin/users">
-        <label>Username:</label>
-        <input type="text" name="username" required>
-        <label>Password:</label>
-        <input type="password" name="password" required>
-        <label>Role:</label>
-        <select name="role">
-            <option value="user">User</option>
-            <option value="admin">Admin</option>
-        </select>
-        <button type="submit">Create User</button>
-    </form>
+                <form method="POST" action="/admin/password-policy">
+                    <div style="margin-bottom:12px;">
+                        <label style="display:inline;">
+                            <input type="checkbox" name="enabled" value="1" {{ 'checked' if policy.enabled }}>
+                            <strong>Enable Password Policy</strong>
+                        </label>
+                    </div>
 
-    <h2>Reset User Password</h2>
-    <form method="POST" action="" id="resetPasswordForm">
-        <label>User:</label>
-        <select name="userId" id="resetUserId" required onchange="document.getElementById('resetPasswordForm').action='/admin/users/' + this.value + '/reset-password'">
-            <option value="">-- Select User --</option>
-            {% for user in non_admin_users %}
-            <option value="{{ user.id }}">{{ user.username }}</option>
-            {% endfor %}
-        </select>
-        <label>New Password:</label>
-        <input type="password" name="new_password" required placeholder="Enter new password">
-        <button type="submit" style="background:#17a2b8;color:white;">Reset Password</button>
-    </form>
+                    <div style="opacity: {{ '1' if policy.enabled else '0.5' }};">
+                        <label>Minimum Length:</label>
+                        <input type="number" name="min_length" value="{{ policy.min_length }}" min="1" max="128" style="width:80px;">
 
-    <h2>Assign App to User</h2>
-    <form method="POST" action="/admin/assign-app">
-        <label>User:</label>
-        <select name="userId" required>
-            <option value="">-- Select User --</option>
-            {% for user in non_admin_users %}
-            <option value="{{ user.id }}">{{ user.username }}</option>
-            {% endfor %}
-        </select>
-        <label>App:</label>
-        <select name="appId" required>
-            <option value="">-- Select App --</option>
-            {% for app in all_apps %}
-            <option value="{{ app.appId }}">{{ app.appId }} ({{ app.origin }})</option>
-            {% endfor %}
-        </select>
-        <button type="submit">Assign App</button>
-    </form>
+                        <div style="margin:8px 0;">
+                            <label style="display:inline;">
+                                <input type="checkbox" name="require_uppercase" value="1" {{ 'checked' if policy.require_uppercase }}>
+                                Require uppercase letter (A-Z)
+                            </label>
+                        </div>
+                        <div style="margin:8px 0;">
+                            <label style="display:inline;">
+                                <input type="checkbox" name="require_lowercase" value="1" {{ 'checked' if policy.require_lowercase }}>
+                                Require lowercase letter (a-z)
+                            </label>
+                        </div>
+                        <div style="margin:8px 0;">
+                            <label style="display:inline;">
+                                <input type="checkbox" name="require_digit" value="1" {{ 'checked' if policy.require_digit }}>
+                                Require digit (0-9)
+                            </label>
+                        </div>
+                        <div style="margin:8px 0;">
+                            <label style="display:inline;">
+                                <input type="checkbox" name="require_special" value="1" {{ 'checked' if policy.require_special }}>
+                                Require special character
+                            </label>
+                        </div>
 
-    <h2>Remove App from User</h2>
-    <form method="POST" action="/admin/remove-app">
-        <label>User:</label>
-        <select name="userId" required>
-            <option value="">-- Select User --</option>
-            {% for user in non_admin_users %}
-            <option value="{{ user.id }}">{{ user.username }}</option>
-            {% endfor %}
-        </select>
-        <label>App:</label>
-        <select name="appId" required>
-            <option value="">-- Select App --</option>
-            {% for app in all_apps %}
-            <option value="{{ app.appId }}">{{ app.appId }} ({{ app.origin }})</option>
-            {% endfor %}
-        </select>
-        <button type="submit" class="danger">Remove App</button>
-    </form>
+                        <label>Allowed Special Characters:</label>
+                        <input type="text" name="special_chars" value="{{ policy.special_chars }}">
+                    </div>
 
-    <h2>Password Policy
-        {% if policy.enabled %}
-        <span class="badge badge-admin">Enabled</span>
-        {% else %}
-        <span class="badge" style="background:#6c757d;color:white;">Disabled</span>
-        {% endif %}
-    </h2>
+                    <button type="submit" class="btn-primary">Save Policy</button>
+                </form>
+            </div>
 
-    {% if policy_message %}
-    <div class="success message">{{ policy_message }}</div>
-    {% endif %}
+            <!-- ACTIVE SESSIONS -->
+            <div class="admin-section" id="active-sessions">
+                <h2>Active Sessions</h2>
+                {% if active_sessions %}
+                <table>
+                    <tr><th>Username</th><th>Role</th><th>Token</th><th>Expires In</th><th>Scopes</th></tr>
+                    {% for s in active_sessions %}
+                    <tr>
+                        <td>{{ s.username }}</td>
+                        <td><span class="badge badge-{{ s.role }}">{{ s.role }}</span></td>
+                        <td><code>{{ s.token_prefix }}</code></td>
+                        <td>{{ s.expires_in }}</td>
+                        <td>{{ s.scopes }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+                {% else %}
+                <p style="color:#95a5a6; font-size:13px;">No active sessions.</p>
+                {% endif %}
+            </div>
 
-    <form method="POST" action="/admin/password-policy">
-        <div style="margin-bottom:15px;">
-            <label style="display:inline;">
-                <input type="checkbox" name="enabled" value="1" {{ 'checked' if policy.enabled }}>
-                <strong>Enable Password Policy</strong> (uncheck to disable all rules)
-            </label>
+            <!-- SYSTEM INFO -->
+            <div class="admin-section" id="system-info">
+                <h2>System Info</h2>
+                <div class="info-grid">
+                    <span class="info-label">PID Version:</span>
+                    <span class="info-value">{{ system_info.pid_version }}</span>
+                    <span class="info-label">Python:</span>
+                    <span class="info-value">{{ system_info.python_version }}</span>
+                    <span class="info-label">OS:</span>
+                    <span class="info-value">{{ system_info.os }}</span>
+                    <span class="info-label">Database:</span>
+                    <span class="info-value"><code>{{ system_info.db_path }}</code></span>
+                </div>
+            </div>
+
         </div>
+    </div>
 
-        <div style="opacity: {{ '1' if policy.enabled else '0.5' }};">
-            <label>Minimum Length:</label>
-            <input type="number" name="min_length" value="{{ policy.min_length }}" min="1" max="128" style="width:80px;">
+    <script>
+        const sections = document.querySelectorAll('.admin-section, #overview');
+        const links = document.querySelectorAll('.sidebar-nav a[href^="#"]');
+        const mainContent = document.querySelector('.main-content');
 
-            <div style="margin:10px 0;">
-                <label style="display:inline;">
-                    <input type="checkbox" name="require_uppercase" value="1" {{ 'checked' if policy.require_uppercase }}>
-                    Require uppercase letter (A-Z)
-                </label>
-            </div>
-            <div style="margin:10px 0;">
-                <label style="display:inline;">
-                    <input type="checkbox" name="require_lowercase" value="1" {{ 'checked' if policy.require_lowercase }}>
-                    Require lowercase letter (a-z)
-                </label>
-            </div>
-            <div style="margin:10px 0;">
-                <label style="display:inline;">
-                    <input type="checkbox" name="require_digit" value="1" {{ 'checked' if policy.require_digit }}>
-                    Require digit (0-9)
-                </label>
-            </div>
-            <div style="margin:10px 0;">
-                <label style="display:inline;">
-                    <input type="checkbox" name="require_special" value="1" {{ 'checked' if policy.require_special }}>
-                    Require special character
-                </label>
-            </div>
+        function updateActiveLink() {
+            let current = '';
+            sections.forEach(section => {
+                const rect = section.getBoundingClientRect();
+                if (rect.top <= 120) current = section.id;
+            });
+            links.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + current) link.classList.add('active');
+            });
+        }
 
-            <label>Allowed Special Characters:</label>
-            <input type="text" name="special_chars" value="{{ policy.special_chars }}">
-        </div>
+        mainContent.addEventListener('scroll', updateActiveLink);
+        window.addEventListener('scroll', updateActiveLink);
 
-        <button type="submit">Save Policy</button>
-    </form>
+        links.forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const target = document.querySelector(link.getAttribute('href'));
+                if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+        });
+    </script>
 {% endblock %}
