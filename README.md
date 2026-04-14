@@ -632,6 +632,7 @@ User A logs out → User B logs into Primary Identity
 - ✅ **Customizable Password Policy** — admin can configure min length, uppercase, lowercase, digit, special char requirements, and disable the policy entirely from the admin dashboard
 - ✅ **User Activation/Deactivation** — admin can disable users without deleting them; deactivated users are blocked from login and all tokens are revoked immediately
 - ✅ **Admin Password Reset** — admin can reset any user's password from the admin panel; password policy is enforced, and all tokens are revoked to force re-login
+- ✅ **Session Takeover Logout** — when a user logs out of PID and another user logs in, all running apps auto-logout within 5 seconds via shared-ui session polling (no app code changes needed)
 
 ---
 
