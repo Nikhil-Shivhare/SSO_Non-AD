@@ -21,7 +21,6 @@ import urllib.parse
 from fastapi import FastAPI, Request, Form, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -35,22 +34,6 @@ import vault_client
 # ============================================================================
 
 app = FastAPI(title="Primary Identity Service", docs_url=None, redoc_url=None)
-
-# CORS — allow demo apps (ports 3001-3004) and launcher to call PID APIs
-# Required for shared-ui session takeover detection polling
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3001",  # App A
-        "http://localhost:3002",  # App B
-        "http://localhost:3003",  # App C
-        "http://localhost:3004",  # App D
-        "http://localhost:3100",  # Launcher
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
-)
 
 # Session middleware — cookie name MUST be PID_SESSION for extension compatibility
 app.add_middleware(
