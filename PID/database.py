@@ -595,3 +595,51 @@ def validate_password(password: str) -> dict:
             errors.append(f"Password must contain at least 1 special character ({special})")
 
     return {"valid": len(errors) == 0, "errors": errors}
+
+
+def get_admin_stats() -> dict:
+    """Get aggregate stats for admin overview."""
+    conn = _get_db()
+    total_users = conn.execute("SELECT COUNT(*) as c FROM users").fetchone()["c"]
+    active_users = conn.execute("SELECT COUNT(*) as c FROM users WHERE is_active = 1").fetchone()["c"]
+    inactive_users = total_users - active_users
+    total_apps = conn.execute("SELECT COUNT(*) as c FROM apps").fetchone()["c"]
+    active_tokens = conn.execute(
+        "SELECT COUNT(*) as c FROM plugin_tokens WHERE expires_at > ?", (int(time.time()),)
+    ).fetchone()["c"]
+    conn.close()
+    return {
+        "total_users": total_users,
+        "active_users": active_users,
+        "inactive_users": inactive_users,
+        "total_apps": total_apps,
+        "active_tokens": active_tokens,
+    }
+
+
+def get_active_sessions() -> list:
+    """Get active plugin tokens with user info (proxy for 'active sessions')."""
+    conn = _get_db()
+    now = int(time.time())
+    rows = conn.execute("""
+        SELECT u.username, u.role, pt.token, pt.expires_at, pt.scopes
+        FROM plugin_tokens pt
+        JOIN users u ON pt.user_id = u.id
+        WHERE pt.expires_at > ?
+        ORDER BY pt.expires_at DESC
+    """, (now,)).fetchall()
+    conn.close()
+
+    sessions = []
+    for r in rows:
+        remaining = r["expires_at"] - now
+        hours, remainder = divmod(remaining, 3600)
+        minutes = remainder // 60
+        sessions.append({
+            "username": r["username"],
+            "role": r["role"],
+            "token_prefix": r["token"][:12] + "...",
+            "expires_in": f"{hours}h {minutes}m",
+            "scopes": r["scopes"],
+        })
+    return sessions

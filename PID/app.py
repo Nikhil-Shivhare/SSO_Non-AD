@@ -257,6 +257,20 @@ async def admin_panel(request: Request, message: str = "", error: str = ""):
     policy = db.get_password_policy()
     policy_message = request.query_params.get("policy_message", "")
 
+    # Stats for overview
+    stats = db.get_admin_stats()
+    active_sessions = db.get_active_sessions()
+
+    # System info
+    import sys
+    import platform
+    system_info = {
+        "python_version": platform.python_version(),
+        "os": f"{platform.system()} {platform.release()}",
+        "db_path": db.DB_PATH,
+        "pid_version": "2.0.0",
+    }
+
     return templates.TemplateResponse("admin.html", {
         "request": request,
         "title": "Admin Panel",
@@ -267,6 +281,9 @@ async def admin_panel(request: Request, message: str = "", error: str = ""):
         "non_admin_users": non_admin_users,
         "policy": policy,
         "policy_message": policy_message,
+        "stats": stats,
+        "active_sessions": active_sessions,
+        "system_info": system_info,
     })
 
 
