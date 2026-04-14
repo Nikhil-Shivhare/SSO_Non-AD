@@ -325,6 +325,22 @@ async def admin_toggle_user(request: Request, user_id: int):
         return RedirectResponse(url=f"/admin?error={urllib.parse.quote(result['error'])}", status_code=302)
 
 
+# POST /admin/users/{id}/reset-password — Reset user password
+@app.post("/admin/users/{user_id}/reset-password")
+async def admin_reset_password(request: Request, user_id: int, new_password: str = Form(...)):
+    """Reset a user's password (admin only)."""
+    session_user = get_session_user(request)
+    if not session_user or session_user["role"] != "admin":
+        raise HTTPException(status_code=403)
+
+    result = db.reset_user_password(user_id, new_password)
+    if result["success"]:
+        print(f"[ADMIN] Password reset for user {user_id}")
+        return RedirectResponse(url="/admin?message=Password+reset+successfully", status_code=302)
+    else:
+        return RedirectResponse(url=f"/admin?error={urllib.parse.quote(result['error'])}", status_code=302)
+
+
 # POST /admin/assign-app — Assign app to user
 @app.post("/admin/assign-app")
 async def admin_assign_app(request: Request, userId: str = Form(...), appId: str = Form(...)):

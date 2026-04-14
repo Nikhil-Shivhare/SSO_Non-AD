@@ -64,6 +64,20 @@
         <button type="submit">Create User</button>
     </form>
 
+    <h2>Reset User Password</h2>
+    <form method="POST" action="" id="resetPasswordForm">
+        <label>User:</label>
+        <select name="userId" id="resetUserId" required onchange="document.getElementById('resetPasswordForm').action='/admin/users/' + this.value + '/reset-password'">
+            <option value="">-- Select User --</option>
+            {% for user in non_admin_users %}
+            <option value="{{ user.id }}">{{ user.username }}</option>
+            {% endfor %}
+        </select>
+        <label>New Password:</label>
+        <input type="password" name="new_password" required placeholder="Enter new password">
+        <button type="submit" style="background:#17a2b8;color:white;">Reset Password</button>
+    </form>
+
     <h2>Assign App to User</h2>
     <form method="POST" action="/admin/assign-app">
         <label>User:</label>

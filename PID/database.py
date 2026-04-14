@@ -296,6 +296,29 @@ def verify_password(user: dict, password: str) -> bool:
     return bcrypt.checkpw(password.encode(), user["password_hash"].encode())
 
 
+def reset_user_password(user_id: int, new_password: str) -> dict:
+    """Reset a user's password (admin action). Returns {success} or {success, error}."""
+    user = find_user_by_id(user_id)
+    if not user:
+        return {"success": False, "error": "User not found"}
+
+    # Validate against password policy
+    validation = validate_password(new_password)
+    if not validation["valid"]:
+        return {"success": False, "error": "; ".join(validation["errors"])}
+
+    password_hash = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt(SALT_ROUNDS)).decode()
+    conn = _get_db()
+    conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+    conn.commit()
+    conn.close()
+
+    # Revoke all tokens to force re-login
+    revoke_user_tokens(user_id)
+    print(f"[DB] Password reset for user {user['username']} (id={user_id}), tokens revoked")
+    return {"success": True}
+
+
 def toggle_user_active(user_id: int) -> dict:
     """Toggle is_active flag for a user. Returns {success, is_active}."""
     conn = _get_db()
