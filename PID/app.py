@@ -361,15 +361,21 @@ async def admin_reset_password(request: Request, user_id: int, new_password: str
 # POST /admin/assign-app — Assign app to user
 @app.post("/admin/assign-app")
 async def admin_assign_app(request: Request, userId: str = Form(...), appId: str = Form(...)):
-    """Assign an app to a user (admin only)."""
+    """Assign an app (or all apps) to a user (admin only)."""
     session_user = get_session_user(request)
     if not session_user or session_user["role"] != "admin":
         raise HTTPException(status_code=403)
 
-    result = db.assign_app_to_user(int(userId), appId)
+    if appId == "__all__":
+        result = db.assign_all_apps_to_user(int(userId))
+        msg = "All apps assigned"
+    else:
+        result = db.assign_app_to_user(int(userId), appId)
+        msg = "App assigned"
+
     if result["success"]:
         print(f"[ADMIN] Assigned {appId} to user {userId}")
-        return RedirectResponse(url="/admin?message=App+assigned", status_code=302)
+        return RedirectResponse(url=f"/admin?message={urllib.parse.quote(msg)}", status_code=302)
     else:
         return RedirectResponse(url=f"/admin?error={urllib.parse.quote(result['error'])}", status_code=302)
 
@@ -377,15 +383,21 @@ async def admin_assign_app(request: Request, userId: str = Form(...), appId: str
 # POST /admin/remove-app — Remove app from user
 @app.post("/admin/remove-app")
 async def admin_remove_app(request: Request, userId: str = Form(...), appId: str = Form(...)):
-    """Remove an app from a user (admin only)."""
+    """Remove an app (or all apps) from a user (admin only)."""
     session_user = get_session_user(request)
     if not session_user or session_user["role"] != "admin":
         raise HTTPException(status_code=403)
 
-    result = db.remove_app_from_user(int(userId), appId)
+    if appId == "__all__":
+        result = db.remove_all_apps_from_user(int(userId))
+        msg = "All apps removed"
+    else:
+        result = db.remove_app_from_user(int(userId), appId)
+        msg = "App removed"
+
     if result["success"]:
         print(f"[ADMIN] Removed {appId} from user {userId}")
-        return RedirectResponse(url="/admin?message=App+removed", status_code=302)
+        return RedirectResponse(url=f"/admin?message={urllib.parse.quote(msg)}", status_code=302)
     else:
         return RedirectResponse(url=f"/admin?error={urllib.parse.quote(result['error'])}", status_code=302)
 

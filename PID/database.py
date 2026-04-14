@@ -351,11 +351,22 @@ def toggle_user_active(user_id: int) -> dict:
 # --------------------------------------------------------------------------
 
 def get_all_apps() -> list[dict]:
-    """Get all apps."""
+    """Get all apps with user counts and schema type."""
     conn = _get_db()
-    rows = conn.execute("SELECT * FROM apps").fetchall()
+    rows = conn.execute("""
+        SELECT a.*, COUNT(ua.user_id) as user_count
+        FROM apps a
+        LEFT JOIN user_apps ua ON a.id = ua.app_id
+        GROUP BY a.id
+    """).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    apps = []
+    for r in rows:
+        app = dict(r)
+        schema = app.get("login_schema", "") or ""
+        app["schema_type"] = "Role-based" if "role" in schema else "Standard"
+        apps.append(app)
+    return apps
 
 
 def get_app_by_app_id(app_id: str) -> dict | None:
@@ -408,6 +419,26 @@ def remove_app_from_user(user_id: int, app_id: str) -> dict:
         return {"success": False, "error": "App not found"}
 
     conn.execute("DELETE FROM user_apps WHERE user_id = ? AND app_id = ?", (user_id, app["id"]))
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
+def assign_all_apps_to_user(user_id: int) -> dict:
+    """Assign all registered apps to a user."""
+    conn = _get_db()
+    apps = conn.execute("SELECT id FROM apps").fetchall()
+    for app in apps:
+        conn.execute("INSERT OR IGNORE INTO user_apps (user_id, app_id) VALUES (?, ?)", (user_id, app["id"]))
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
+def remove_all_apps_from_user(user_id: int) -> dict:
+    """Remove all apps from a user."""
+    conn = _get_db()
+    conn.execute("DELETE FROM user_apps WHERE user_id = ?", (user_id,))
     conn.commit()
     conn.close()
     return {"success": True}
