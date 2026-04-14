@@ -117,6 +117,15 @@ def init_database():
         if "duplicate column" not in str(e).lower():
             print(f"[DB] Migration error: {e}")
 
+    # Migration: add is_active column if missing (default=1 means active)
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1")
+        print("[DB] Added is_active column to existing users table")
+        cursor.execute("UPDATE users SET is_active = 1 WHERE is_active IS NULL")
+    except sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e).lower():
+            print(f"[DB] Migration error: {e}")
+
     # Guard: fix any users with NULL or empty vault_id
     rows = cursor.execute("SELECT id, username FROM users WHERE vault_id IS NULL OR vault_id = ''").fetchall()
     for row in rows:
@@ -209,7 +218,7 @@ def find_user_by_username(username: str) -> dict | None:
 def find_user_by_id(user_id: int) -> dict | None:
     """Find user by ID. Returns dict or None."""
     conn = _get_db()
-    row = conn.execute("SELECT id, username, role, vault_id FROM users WHERE id = ?", (user_id,)).fetchone()
+    row = conn.execute("SELECT id, username, role, vault_id, is_active FROM users WHERE id = ?", (user_id,)).fetchone()
     conn.close()
     return dict(row) if row else None
 
@@ -225,7 +234,7 @@ def get_vault_id(user_id: int) -> str | None:
 def get_all_users() -> list[dict]:
     """Get all users."""
     conn = _get_db()
-    rows = conn.execute("SELECT id, username, role FROM users").fetchall()
+    rows = conn.execute("SELECT id, username, role, is_active FROM users").fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -285,6 +294,33 @@ async def delete_user(user_id: int) -> dict:
 def verify_password(user: dict, password: str) -> bool:
     """Verify password against stored hash."""
     return bcrypt.checkpw(password.encode(), user["password_hash"].encode())
+
+
+def toggle_user_active(user_id: int) -> dict:
+    """Toggle is_active flag for a user. Returns {success, is_active}."""
+    conn = _get_db()
+    row = conn.execute("SELECT id, username, role, is_active FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        conn.close()
+        return {"success": False, "error": "User not found"}
+    if row["role"] == "admin":
+        conn.close()
+        return {"success": False, "error": "Cannot deactivate admin users"}
+
+    new_status = 0 if row["is_active"] else 1
+    conn.execute("UPDATE users SET is_active = ? WHERE id = ?", (new_status, user_id))
+    conn.commit()
+    conn.close()
+
+    status_label = "activated" if new_status else "deactivated"
+    print(f"[DB] User {row['username']} {status_label}")
+
+    # If deactivating, revoke all tokens
+    if not new_status:
+        revoke_user_tokens(user_id)
+        print(f"[DB] Revoked all tokens for deactivated user {row['username']}")
+
+    return {"success": True, "is_active": bool(new_status)}
 
 
 # --------------------------------------------------------------------------
@@ -418,6 +454,7 @@ def introspect_token(token: str) -> dict:
         "active": True,
         "userId": row["user_id"],
         "username": user["username"],
+        "is_active": user.get("is_active", 1),
         "scopes": json.loads(row["scopes"]),
     }
 

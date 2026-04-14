@@ -179,6 +179,12 @@ async def login_submit(request: Request, username: str = Form(...), password: st
             "request": request, "title": "Login", "error": "Invalid username or password."
         })
 
+    # Block deactivated users
+    if not user.get("is_active", 1):
+        return templates.TemplateResponse("login.html", {
+            "request": request, "title": "Login", "error": "Your account has been deactivated. Contact an administrator."
+        })
+
     # Create session
     request.session["userId"] = user["id"]
     request.session["username"] = user["username"]
@@ -298,6 +304,23 @@ async def admin_delete_user(request: Request, user_id: int):
     if result["success"]:
         print(f"[ADMIN] Deleted user ID: {user_id}")
         return RedirectResponse(url="/admin?message=User+deleted", status_code=302)
+    else:
+        return RedirectResponse(url=f"/admin?error={urllib.parse.quote(result['error'])}", status_code=302)
+
+
+# POST /admin/users/{id}/toggle — Activate/Deactivate user
+@app.post("/admin/users/{user_id}/toggle")
+async def admin_toggle_user(request: Request, user_id: int):
+    """Toggle user active/inactive status (admin only)."""
+    session_user = get_session_user(request)
+    if not session_user or session_user["role"] != "admin":
+        raise HTTPException(status_code=403)
+
+    result = db.toggle_user_active(user_id)
+    if result["success"]:
+        status = "activated" if result["is_active"] else "deactivated"
+        print(f"[ADMIN] User {user_id} {status}")
+        return RedirectResponse(url=f"/admin?message=User+{status}+successfully", status_code=302)
     else:
         return RedirectResponse(url=f"/admin?error={urllib.parse.quote(result['error'])}", status_code=302)
 
@@ -446,6 +469,11 @@ async def api_introspect(request: Request):
         return JSONResponse(status_code=400, content={"active": False, "error": "pluginToken is required"})
 
     result = db.introspect_token(plugin_token)
+
+    # Block tokens for deactivated users
+    if result.get("active") and not result.get("is_active", 1):
+        return JSONResponse(content={"active": False, "error": "User account is deactivated"})
+
     return JSONResponse(content=result)
 
 
