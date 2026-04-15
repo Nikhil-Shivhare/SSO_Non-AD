@@ -68,19 +68,40 @@
   // ==========================================================================
   
   /**
-   * Find login form on page
+   * Find login form on page.
+   * Uses generic password-field detection so it works on ANY site,
+   * regardless of username field name (username, email, handleOrEmail, etc.)
    * @returns {{ form, usernameInput, passwordInput } | null}
    */
   function findLoginForm() {
-    const usernameInput = document.querySelector('input[name="username"]');
-    const passwordInput = document.querySelector('input[name="password"]');
-    
-    if (!usernameInput || !passwordInput) {
-      return null;
+    // Any visible password field = login form
+    const passwordInput = document.querySelector('input[type="password"]');
+    if (!passwordInput) return null;
+
+    const form = passwordInput.closest('form');
+
+    // Try common username-like selectors in order of specificity
+    const usernameSelectors = [
+      'input[name="username"]',
+      'input[name="email"]',
+      'input[name="handleOrEmail"]',
+      'input[name="login"]',
+      'input[name="user"]',
+      'input[name="handle"]',
+      'input[type="email"]',
+      'input[type="text"]',  // Generic text input fallback
+    ];
+
+    let usernameInput = null;
+    for (const sel of usernameSelectors) {
+      // Prefer to search within the form, then whole document
+      const el = (form && form.querySelector(sel)) || document.querySelector(sel);
+      if (el && el !== passwordInput) {
+        usernameInput = el;
+        break;
+      }
     }
-    
-    const form = usernameInput.closest('form') || passwordInput.closest('form');
-    
+
     return { form, usernameInput, passwordInput };
   }
   
