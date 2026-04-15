@@ -262,16 +262,26 @@
     // Helper: capture + save + start watching 
     function captureAndWatch() {
       const capturedFields = captureFormFields(currentLoginSchema);
-      if (capturedFields && capturedFields.username && capturedFields.password) {
+
+      // Check: did schema-driven capture get at least a password field?
+      // We intentionally DON'T check for 'username' because apps like Codeforces
+      // use 'handleOrEmail', LeetCode uses 'login', etc.
+      const schemaGotPassword = capturedFields && capturedFields.password;
+      const schemaGotAnyField = capturedFields && Object.keys(capturedFields).length >= 2;
+
+      if (schemaGotPassword && schemaGotAnyField) {
+        // Schema-driven capture succeeded — save with schema field names intact
+        // (e.g. { handleOrEmail: '...', password: '...' })
+        // This ensures fillLoginFormWithSchema() can match them back via the schema keys
         saveLearningCredentials(capturedFields);
-        Utils.log('Learning mode: captured fields', Object.keys(capturedFields));
+        Utils.log('Learning mode: captured fields via schema', Object.keys(capturedFields));
       } else {
-        // Fallback: capture directly from DOM inputs
+        // Fallback: read directly from DOM inputs (covers no-schema case)
         const u = usernameInput ? usernameInput.value : '';
         const p = passwordInput ? passwordInput.value : '';
         if (u && p) {
           saveLearningCredentials({ username: u, password: p });
-          Utils.log('Learning mode: captured via fallback (username/password)');
+          Utils.log('Learning mode: captured via DOM fallback (username/password)');
         } else {
           Utils.log('Learning mode: no credentials captured — fields were empty at capture time');
           return;
