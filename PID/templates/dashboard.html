@@ -1,39 +1,157 @@
 {% extends "base.html" %}
 {% block content %}
-    <nav>
-        <a href="/dashboard">Dashboard</a>
-        {% if role == 'admin' %}<a href="/admin">Admin Panel</a>{% endif %}
-        <a href="/logout">Logout</a>
-    </nav>
+    <style>
+        body { max-width: 100%; margin: 0; padding: 0; background: #f5f6fa; }
+        
+        .topbar {
+            background: #2c3e50;
+            padding: 15px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .topbar-links a {
+            color: #bdc3c7;
+            text-decoration: none;
+            font-size: 14px;
+            margin-left: 20px;
+            transition: color 0.15s;
+        }
+        .topbar-links a:hover { color: #fff; }
 
-    <h1>Welcome, {{ username }}!</h1>
-    <p>Role: <span class="badge badge-{{ role }}">{{ role }}</span></p>
+        .dashboard-container {
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
 
-    <h2>Your Assigned Apps</h2>
-    <table>
-        <tr><th>App ID</th><th>Origin</th><th>Action</th></tr>
+        .welcome-card {
+            background: #fff;
+            border: 1px solid #e0e4ea;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .welcome-card h1 { border: none; margin: 0; padding: 0; font-size: 24px; color: #2c3e50; }
+        
+        .section-title {
+            font-size: 18px;
+            color: #2c3e50;
+            margin-bottom: 16px;
+            font-weight: 600;
+        }
+
+        .apps-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        
+        .app-card {
+            background: #fff;
+            border: 1px solid #e0e4ea;
+            border-radius: 8px;
+            padding: 20px;
+            position: relative;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .app-card:hover { border-color: #aed6f1; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+
+        .app-card-title { font-weight: 600; font-size: 16px; color: #2c3e50; margin-bottom: 8px; padding-right: 45px; }
+        .app-card-badge { position: absolute; top: 18px; right: 20px; background: #fef5e7; color: #e67e22; font-size: 10px; }
+        .app-card-link { font-size: 13px; margin-bottom: 16px; }
+        .app-card-link a { color: #2980b9; text-decoration: none; }
+        .app-card-link a:hover { text-decoration: underline; }
+        
+        .app-card-footer { display: flex; justify-content: space-between; align-items: center; }
+        
+        .btn-open {
+            background: #ebf5fb; color: #2980b9; 
+            border: 1px solid #aed6f1; border-radius: 5px;
+            padding: 6px 14px; font-size: 12px; font-weight: 500;
+            text-decoration: none; display: inline-block;
+            transition: background 0.15s;
+        }
+        .btn-open:hover { background: #d4e6f1; }
+
+        .info-card {
+            background: #fff;
+            border: 1px solid #b8daff;
+            border-left: 4px solid #007bff;
+            border-radius: 8px;
+            padding: 24px;
+        }
+        .info-card h3 { margin: 0 0 10px 0; font-size: 16px; color: #004085; }
+        .info-card p { font-size: 14px; color: #333; margin: 0 0 14px 0; line-height: 1.5; }
+        .info-card ol { margin: 0; padding-left: 20px; font-size: 13.5px; color: #555; line-height:1.6; }
+        .info-card li { margin-bottom: 6px; }
+    </style>
+
+    <!-- Hide base nav -->
+    <style>nav { display: none; }</style>
+
+    <div class="topbar">
+        <div style="color: #ecf0f1; font-weight: 600; font-size: 16px;">Primary Identity — Dashboard</div>
+        <div class="topbar-links">
+            {% if role == 'admin' %}<a href="/admin">Admin Panel</a>{% endif %}
+            <a href="/logout">Logout</a>
+        </div>
+    </div>
+
+    <div class="dashboard-container">
+        
+        <div class="welcome-card">
+            <h1>Welcome, {{ username }}!</h1>
+            <div>
+                {% if role == 'admin' %}
+                <span class="badge" style="background:#fdedec; color:#c0392b; border:1px solid #f5b7b1; font-size:13px; padding:6px 12px;">Role: {{ role }}</span>
+                {% else %}
+                <span class="badge" style="background:#e8f6f3; color:#16a085; border:1px solid #a2d9ce; font-size:13px; padding:6px 12px;">Role: {{ role }}</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="section-title">Your Assigned Apps</div>
+        
         {% if apps %}
+        <div class="apps-grid">
             {% for app in apps %}
-            <tr>
-                <td>{{ app.appId }}</td>
-                <td>{{ app.origin }}</td>
-                <td><a href="{{ app.origin }}/login" target="_blank">Open</a></td>
-            </tr>
+            <div class="app-card">
+                {% if app.appId.startswith('app_') %}
+                <span class="badge app-card-badge">Demo</span>
+                {% endif %}
+                
+                <div class="app-card-title">
+                    {% if app.appId == 'app_a' %}App A — Session-based app
+                    {% elif app.appId == 'app_b' %}App B — Session + CSRF app
+                    {% elif app.appId == 'app_c' %}App C — Stateless app (no session)
+                    {% elif app.appId == 'app_d' %}App D — Role-based login app
+                    {% else %}{{ app.appId }}
+                    {% endif %}
+                </div>
+                
+                <div class="app-card-link">
+                    <a href="{{ app.origin }}" target="_blank">{{ app.origin }}</a>
+                </div>
+                
+                <div class="app-card-footer">
+                    <span class="badge" style="background:#f8f9fa; color:#6c757d; border:1px solid #dee2e6;">{{ app.schema_type }}</span>
+                    <a href="{{ app.origin }}/login" target="_blank" class="btn-open">Open App →</a>
+                </div>
+            </div>
             {% endfor %}
+        </div>
         {% else %}
-            <tr><td colspan="3">No apps assigned</td></tr>
+        <div style="background:#fff; border:1px solid #e0e4ea; border-radius:8px; padding:32px; text-align:center; color:#7f8c8d; margin-bottom:32px;">
+            No apps are currently assigned to you.
+        </div>
         {% endif %}
-    </table>
 
-    <h2>SSO Extension Status</h2>
-    <p>If you have the browser extension installed, it will automatically use your Primary Identity session to login to assigned apps.</p>
-    <div class="info message">
-        <strong>How it works:</strong>
-        <ol>
-            <li>Extension calls <code>POST /api/plugin/bootstrap</code> with your session cookie</li>
-            <li>Server returns a <code>pluginToken</code> and list of allowed apps</li>
-            <li>Extension uses token to fetch credentials from vault</li>
-            <li>Extension auto-fills and submits login forms</li>
-        </ol>
+
+
     </div>
 {% endblock %}
