@@ -154,6 +154,7 @@
             <div class="sidebar-nav">
                 <a href="#overview" class="active">Overview</a>
                 <a href="#applications">Applications</a>
+                <a href="#add-app">Add Application</a>
                 <a href="#users">Users</a>
                 <a href="#create-user">Create User</a>
                 <a href="#reset-password">Reset Password</a>
@@ -215,8 +216,12 @@
                     <div style="border:1px solid #e0e4ea; border-radius:6px; padding:16px; background:#fafbfc; position:relative;">
                         {% if app.appId.startswith('app_') %}
                         <span class="badge" style="position:absolute; top:16px; right:16px; background:#fef5e7; color:#e67e22; font-size:10px;">Demo</span>
+                        {% else %}
+                        <form method="POST" action="/admin/apps/{{ app.appId }}/delete" style="position:absolute; top:14px; right:14px; margin:0;">
+                            <button type="submit" class="btn-danger" style="padding:3px 8px; font-size:10px;" onclick="return confirm('Delete {{ app.appId }}? This will remove all user assignments for this app.')">Remove</button>
+                        </form>
                         {% endif %}
-                        <div style="font-weight:600; font-size:15px; color:#2c3e50; margin-bottom:6px; padding-right:45px;">
+                        <div style="font-weight:600; font-size:15px; color:#2c3e50; margin-bottom:6px; padding-right:55px;">
                             {% if app.appId == 'app_a' %}App A — Session-based app
                             {% elif app.appId == 'app_b' %}App B — Session + CSRF app
                             {% elif app.appId == 'app_c' %}App C — Stateless app (no session)
@@ -235,6 +240,64 @@
                     {% endfor %}
                 </div>
             </div>
+
+            <!-- ADD APP -->
+            <div class="admin-section" id="add-app">
+                <h2>Add New Application</h2>
+                <p style="font-size:13px; color:#7f8c8d; margin-top:-6px;">Register any website (e.g. Codeforces, LeetCode, TryHackMe) to enable SSO auto-login via the browser extension.</p>
+
+                <form method="POST" action="/admin/apps" id="add-app-form">
+                    <!-- Row 1: App ID + Origin -->
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:14px;">
+                        <div>
+                            <label>App ID <span style="color:#e74c3c;">*</span></label>
+                            <input type="text" name="app_id" required placeholder="e.g. codeforces" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, underscores and hyphens">
+                            <small style="color:#95a5a6;">Unique identifier (no spaces)</small>
+                        </div>
+                        <div>
+                            <label>Origin URL <span style="color:#e74c3c;">*</span></label>
+                            <input type="url" name="origin" id="app-origin" required placeholder="https://codeforces.com" oninput="autoFillUrls(this.value)">
+                            <small style="color:#95a5a6;">Base URL of the app (no trailing slash)</small>
+                        </div>
+                    </div>
+
+                    <!-- Row 2: Login URL + Logout URL + Password URL -->
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:14px;">
+                        <div>
+                            <label>Login Page URL <span style="color:#e74c3c;">*</span></label>
+                            <input type="text" name="login_url" id="app-login-url" required placeholder="https://codeforces.com/enter">
+                            <small style="color:#95a5a6;">Where users log in (e.g. /enter, /signin)</small>
+                        </div>
+                        <div>
+                            <label>Logout URL</label>
+                            <input type="text" name="logout_url" id="app-logout-url" placeholder="https://codeforces.com/logout">
+                            <small style="color:#95a5a6;">Auto-logout endpoint</small>
+                        </div>
+                        <div>
+                            <label>Password Reset URL</label>
+                            <input type="text" name="password_url" id="app-password-url" placeholder="https://codeforces.com/password">
+                            <small style="color:#95a5a6;">Password change page</small>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom:8px;">
+                        <label>Login Schema (JSON) <span style="color:#e74c3c;">*</span></label>
+                        <div style="display:flex; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+                            <button type="button" class="btn-info" style="font-size:11px; padding:4px 10px;" onclick="setSchema('standard')">Use Standard Template</button>
+                            <button type="button" class="btn-info" style="font-size:11px; padding:4px 10px;" onclick="setSchema('role')">Use Role-based Template</button>
+                        </div>
+                        <textarea name="login_schema" id="login-schema-input" rows="8" required
+                            style="width:100%; box-sizing:border-box; font-family:monospace; font-size:12px; border:1px solid #d0d5dd; border-radius:4px; padding:8px;"
+                            placeholder='Click a template above or paste your JSON schema here...'></textarea>
+                        <small style="color:#95a5a6;">Defines which CSS selectors the extension will use to fill the login form on this site.</small>
+                    </div>
+
+                    <div style="margin-top:14px;">
+                        <button type="submit" class="btn-success">Register Application</button>
+                    </div>
+                </form>
+            </div>
+
 
             <!-- USERS -->
             <div class="admin-section" id="users">
@@ -504,6 +567,42 @@
                 const target = document.querySelector(link.getAttribute('href'));
                 if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
             });
+        });
+
+        // Schema template helper for Add Application form
+        const SCHEMA_TEMPLATES = {
+            standard: JSON.stringify({
+                "username": {"selector": "input[name='username']", "type": "text"},
+                "password": {"selector": "input[name='password']", "type": "password"}
+            }, null, 2),
+            role: JSON.stringify({
+                "username": {"selector": "input[name='username']", "type": "text"},
+                "password": {"selector": "input[name='password']", "type": "password"},
+                "role": {"selector": "select[name='role']", "type": "select"}
+            }, null, 2),
+        };
+
+        function setSchema(type) {
+            const el = document.getElementById('login-schema-input');
+            if (el) el.value = SCHEMA_TEMPLATES[type] || '';
+        }
+
+        // Auto-fill URL fields from origin
+        function autoFillUrls(origin) {
+            if (!origin) return;
+            const o = origin.trim().replace(/\/$/, '');
+            const loginEl = document.getElementById('app-login-url');
+            const logoutEl = document.getElementById('app-logout-url');
+            const passEl = document.getElementById('app-password-url');
+            if (loginEl && !loginEl.dataset.userEdited) loginEl.value = o + '/login';
+            if (logoutEl && !logoutEl.dataset.userEdited) logoutEl.value = o + '/logout';
+            if (passEl && !passEl.dataset.userEdited) passEl.value = o + '/password';
+        }
+
+        // Mark URL fields as manually edited so auto-fill doesn't override them
+        ['app-login-url', 'app-logout-url', 'app-password-url'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('input', () => { el.dataset.userEdited = '1'; });
         });
     </script>
 {% endblock %}

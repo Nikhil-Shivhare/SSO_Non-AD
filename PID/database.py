@@ -126,6 +126,19 @@ def init_database():
         if "duplicate column" not in str(e).lower():
             print(f"[DB] Migration error: {e}")
 
+    # Migration: add login_url, logout_url, password_url columns to apps if missing
+    for col, default_suffix in [("login_url", "/login"), ("logout_url", "/logout"), ("password_url", "/password")]:
+        try:
+            cursor.execute(f"ALTER TABLE apps ADD COLUMN {col} TEXT")
+            # Back-fill from existing origin
+            rows = cursor.execute("SELECT id, origin FROM apps WHERE {col} IS NULL".replace("{col}", col)).fetchall()
+            for row in rows:
+                cursor.execute(f"UPDATE apps SET {col} = ? WHERE id = ?", (row["origin"] + default_suffix, row["id"]))
+            print(f"[DB] Added {col} column to apps table")
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e).lower():
+                print(f"[DB] Migration error ({col}): {e}")
+
     # Guard: fix any users with NULL or empty vault_id
     rows = cursor.execute("SELECT id, username FROM users WHERE vault_id IS NULL OR vault_id = ''").fetchall()
     for row in rows:
@@ -377,6 +390,47 @@ def get_app_by_app_id(app_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+def add_app(app_id: str, origin: str, login_schema: str,
+            login_url: str = "", logout_url: str = "", password_url: str = "") -> dict:
+    """Register a new application. Returns {success, error?}."""
+    origin_clean = origin.strip().rstrip("/")
+    # Derive defaults from origin if not supplied
+    login_url = login_url.strip() or f"{origin_clean}/login"
+    logout_url = logout_url.strip() or f"{origin_clean}/logout"
+    password_url = password_url.strip() or f"{origin_clean}/password"
+
+    conn = _get_db()
+    try:
+        conn.execute(
+            "INSERT INTO apps (appId, origin, login_schema, login_url, logout_url, password_url) VALUES (?, ?, ?, ?, ?, ?)",
+            (app_id.strip(), origin_clean, login_schema, login_url, logout_url, password_url),
+        )
+        conn.commit()
+        print(f"[DB] Registered new app: {app_id} -> {origin_clean} (login: {login_url})")
+        return {"success": True}
+    except sqlite3.IntegrityError:
+        return {"success": False, "error": f"App ID '{app_id}' already exists."}
+    finally:
+        conn.close()
+
+
+def delete_app(app_id: str) -> dict:
+    """Delete an application by appId. Returns {success, error?}."""
+    conn = _get_db()
+    try:
+        # Remove user_app assignments first
+        row = conn.execute("SELECT id FROM apps WHERE appId = ?", (app_id,)).fetchone()
+        if not row:
+            return {"success": False, "error": f"App '{app_id}' not found."}
+        conn.execute("DELETE FROM user_apps WHERE app_id = ?", (row["id"],))
+        conn.execute("DELETE FROM apps WHERE appId = ?", (app_id,))
+        conn.commit()
+        print(f"[DB] Deleted app: {app_id}")
+        return {"success": True}
+    finally:
+        conn.close()
+
+
 def get_user_apps(user_id: int) -> list[dict]:
     """Get all apps assigned to a user."""
     conn = _get_db()
@@ -389,7 +443,14 @@ def get_user_apps(user_id: int) -> list[dict]:
         (user_id,),
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    
+    apps = []
+    for r in rows:
+        app = dict(r)
+        schema = app.get("login_schema", "") or ""
+        app["schema_type"] = "Role-based" if "role" in schema else "Standard"
+        apps.append(app)
+    return apps
 
 
 def assign_app_to_user(user_id: int, app_id: str) -> dict:

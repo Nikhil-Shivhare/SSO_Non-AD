@@ -64,6 +64,73 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 # Templates
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
 
+# ============================================================================
+# EXTENSION MANIFEST AUTO-UPDATE
+# ============================================================================
+
+# Path to the SSO extension manifest (relative to this file's parent)
+MANIFEST_PATH = os.path.join(os.path.dirname(__file__), "..", "sso-extension", "manifest.json")
+
+
+def update_extension_manifest(origin: str, action: str = "add") -> bool:
+    """
+    Automatically add or remove an origin wildcard from the SSO browser extension's
+    manifest.json (content_scripts[0].matches and host_permissions).
+
+    Args:
+        origin: The base URL, e.g. 'https://codeforces.com'
+        action: 'add' or 'remove'
+
+    Returns:
+        True if manifest was updated, False on error.
+    """
+    try:
+        manifest_path = os.path.abspath(MANIFEST_PATH)
+        with open(manifest_path, "r") as f:
+            manifest = json.load(f)
+
+        # Build the wildcard pattern from origin
+        origin_clean = origin.rstrip("/")
+        wildcard = f"{origin_clean}/*"
+
+        changed = False
+
+        # Update content_scripts matches
+        for cs in manifest.get("content_scripts", []):
+            matches = cs.get("matches", [])
+            if action == "add" and wildcard not in matches:
+                matches.append(wildcard)
+                cs["matches"] = sorted(matches)
+                changed = True
+            elif action == "remove" and wildcard in matches:
+                matches.remove(wildcard)
+                cs["matches"] = sorted(matches)
+                changed = True
+
+        # Update host_permissions
+        host_perms = manifest.get("host_permissions", [])
+        if action == "add" and wildcard not in host_perms:
+            host_perms.append(wildcard)
+            manifest["host_permissions"] = sorted(host_perms)
+            changed = True
+        elif action == "remove" and wildcard in host_perms:
+            host_perms.remove(wildcard)
+            manifest["host_permissions"] = sorted(host_perms)
+            changed = True
+
+        if changed:
+            with open(manifest_path, "w") as f:
+                json.dump(manifest, f, indent=2)
+                f.write("\n")
+            print(f"[MANIFEST] {action.upper()} {wildcard} -> manifest.json updated")
+        else:
+            print(f"[MANIFEST] No change needed for {wildcard}")
+
+        return True
+    except Exception as e:
+        print(f"[MANIFEST] Error updating manifest: {e}")
+        return False
+
 
 # ============================================================================
 # STARTUP EVENT
@@ -400,6 +467,68 @@ async def admin_remove_app(request: Request, userId: str = Form(...), appId: str
         return RedirectResponse(url=f"/admin?message={urllib.parse.quote(msg)}", status_code=302)
     else:
         return RedirectResponse(url=f"/admin?error={urllib.parse.quote(result['error'])}", status_code=302)
+
+
+# POST /admin/apps — Register a new application
+@app.post("/admin/apps")
+async def admin_add_app(
+    request: Request,
+    app_id: str = Form(...),
+    origin: str = Form(...),
+    login_schema: str = Form(...),
+    login_url: str = Form(""),
+    logout_url: str = Form(""),
+    password_url: str = Form(""),
+):
+    """Register a new SSO-capable application (admin only)."""
+    session_user = get_session_user(request)
+    if not session_user or session_user["role"] != "admin":
+        raise HTTPException(status_code=403)
+
+    # Validate JSON schema
+    import json as _json
+    try:
+        _json.loads(login_schema)
+    except ValueError:
+        error = "Invalid JSON in Login Schema. Please check your input."
+        return RedirectResponse(url=f"/admin?error={urllib.parse.quote(error)}#add-app", status_code=302)
+
+    result = db.add_app(app_id, origin, login_schema, login_url, logout_url, password_url)
+    if result["success"]:
+        # Auto-update extension manifest.json
+        update_extension_manifest(origin, action="add")
+        msg = f"Application '{app_id}' registered. Extension manifest updated automatically."
+        print(f"[ADMIN] Registered new app: {app_id}")
+        return RedirectResponse(url=f"/admin?message={urllib.parse.quote(msg)}#applications", status_code=302)
+    else:
+        return RedirectResponse(url=f"/admin?error={urllib.parse.quote(result['error'])}#add-app", status_code=302)
+
+
+# POST /admin/apps/{app_id}/delete — Delete a registered application
+@app.post("/admin/apps/{app_id}/delete")
+async def admin_delete_app(request: Request, app_id: str):
+    """Delete a registered application (admin only). Cannot delete demo apps."""
+    session_user = get_session_user(request)
+    if not session_user or session_user["role"] != "admin":
+        raise HTTPException(status_code=403)
+
+    # Protect built-in demo apps
+    if app_id in ("app_a", "app_b", "app_c", "app_d"):
+        error = f"Cannot delete built-in demo application '{app_id}'."
+        return RedirectResponse(url=f"/admin?error={urllib.parse.quote(error)}#applications", status_code=302)
+
+    # Look up origin BEFORE deleting (so we can update the manifest)
+    app_info = db.get_app_by_app_id(app_id)
+
+    result = db.delete_app(app_id)
+    if result["success"]:
+        # Auto-update extension manifest.json
+        if app_info:
+            update_extension_manifest(app_info["origin"], action="remove")
+        msg = f"Application '{app_id}' deleted. Extension manifest updated."
+        return RedirectResponse(url=f"/admin?message={urllib.parse.quote(msg)}#applications", status_code=302)
+    else:
+        return RedirectResponse(url=f"/admin?error={urllib.parse.quote(result['error'])}#applications", status_code=302)
 
 
 # POST /admin/password-policy — Update password policy

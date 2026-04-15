@@ -140,7 +140,7 @@
                 
                 <div class="app-card-footer">
                     <span class="badge" style="background:#f8f9fa; color:#6c757d; border:1px solid #dee2e6;">{{ app.schema_type }}</span>
-                    <a href="{{ app.origin }}/login" target="_blank" class="btn-open">Open App →</a>
+                    <a href="{{ app.login_url or (app.origin + '/login') }}" target="_blank" class="btn-open">Open App →</a>
                 </div>
             </div>
             {% endfor %}
