@@ -343,21 +343,22 @@
     /**
      * Called by observer when login form disappears.
      */
-    function handleLearningSuccess() {
+    async function handleLearningSuccess() {
       const capturedData = getLearningCredentials();
       if (!capturedData) {
         Utils.log('Learning mode: observer fired but no credentials captured');
         return;
       }
 
-      if (Utils.askConsent('Login successful. Save credentials for future automatic login?')) {
+      const ok = await Utils.askConsentAsync('Login successful! Save credentials for future automatic login?');
+      if (ok) {
         chrome.runtime.sendMessage({
           action: 'saveCredentials',
           origin: currentOrigin,
           fields: capturedData.fields
         }, (response) => {
           if (response && response.success) {
-            Utils.showNotification('Credentials Saved', 'SSO is now enabled for this application.');
+            Utils.showNotification('Credentials Saved ✅', 'SSO is now enabled for this application.');
             Utils.log('Credentials saved (SPA observer mode)');
           } else {
             Utils.log('Failed to save credentials:', response ? response.error : 'No response');
@@ -374,7 +375,7 @@
    * Watch for login success in stateless apps (no page navigation)
    * Checks if login form has disappeared after submission
    */
-  function watchForLoginSuccess() {
+  async function watchForLoginSuccess() {
     const capturedData = getLearningCredentials();
     if (!capturedData) return;
     
@@ -383,16 +384,15 @@
     if (!formData) {
       Utils.log('Learning mode: login form disappeared - assuming success (stateless app)');
       
-      // CASE 3: Ask user consent to save
-      if (Utils.askConsent('Login successful. Save credentials for future automatic login?')) {
+      const ok = await Utils.askConsentAsync('Login successful! Save credentials for future automatic login?');
+      if (ok) {
         chrome.runtime.sendMessage({
           action: 'saveCredentials',
           origin: currentOrigin,
           fields: capturedData.fields
         }, (response) => {
           if (response && response.success) {
-            // CASE 4: Credentials saved notification
-            Utils.showNotification('Credentials Saved', 'SSO is now enabled for this application.');
+            Utils.showNotification('Credentials Saved ✅', 'SSO is now enabled for this application.');
             Utils.log('Credentials saved (stateless app)');
           } else {
             Utils.log('Failed to save credentials:', response ? response.error : 'No response');
@@ -400,11 +400,9 @@
         });
       }
       
-      // Clear storage after handling
       clearLearningCredentials();
       clearLoginSchema();
     } else {
-      // Form still present - login might have failed, clear stored credentials
       Utils.log('Learning mode: form still present - login may have failed');
       clearLearningCredentials();
       clearLoginSchema();
@@ -442,7 +440,7 @@
   /**
    * Check if login was successful and save captured credentials
    */
-  function checkLearningSuccess() {
+  async function checkLearningSuccess() {
     // Check if we have captured credentials from previous page
     const capturedData = getLearningCredentials();
     if (!capturedData) return;
@@ -458,16 +456,16 @@
     
     Utils.log('Learning mode: login appears successful');
     
-    // CASE 3: Ask user consent
-    if (Utils.askConsent('Login successful. Save credentials for future automatic login?')) {
+    // Ask user consent via async overlay (works on external sites)
+    const ok = await Utils.askConsentAsync('Login successful! Save credentials for future automatic login?');
+    if (ok) {
       chrome.runtime.sendMessage({
         action: 'saveCredentials',
         origin: currentOrigin,
         fields: capturedData.fields
       }, (response) => {
         if (response && response.success) {
-          // CASE 4: Credentials saved notification
-          Utils.showNotification('Credentials Saved', 'SSO is now enabled for this application.');
+          Utils.showNotification('Credentials Saved ✅', 'SSO is now enabled for this application.');
           Utils.log('Credentials saved');
         } else {
           Utils.log('Failed to save credentials:', response ? response.error : 'No response');
@@ -478,7 +476,6 @@
     // Clear storage after handling
     clearLearningCredentials();
     clearLoginSchema();
-    // Clear auto-login attempt flag (credentials updated, next attempt should try silently)
     sessionStorage.removeItem('sso_auto_login_attempted');
   }
   
