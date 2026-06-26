@@ -718,6 +718,23 @@ Tasks:
 - Load dev signing certificate.
 - Return valid IdP metadata XML.
 
+CRITICAL Signxml Configuration (add to saml_idp.py):
+
+```python
+from signxml import XMLSigner
+
+signer = XMLSigner(
+    method=signxml.SignatureMethod.RSA_SHA256,
+    digest_algorithm=signxml.DigestAlgorithm.SHA256,
+)
+
+# CRITICAL: id_attribute_name must precisely match SAML ID attribute name (e.g., ID="_123...")
+# Without this, signxml will fail to sign assertions because it won't recognize "ID" as the anchor
+signed_element = signer.sign(
+    assertion_element, key=private_key, cert=public_cert, id_attribute_name="ID"
+)
+```
+
 Validation:
 
 ```text
@@ -735,6 +752,27 @@ Tasks:
 - Save the generated request ID in App E session as `saml_request_id`.
 - Redirect to PID `/saml/sso`.
 - Preserve RelayState.
+
+CRITICAL: Hand Off Request Tracking to Library:
+```javascript
+// Let the library natively manage the Request ID lifecycle and caching
+app.get("/saml/login", (req, res, next) => {
+    saml.getAuthorizeUrlAsync({
+        relayState: "your_opaque_state"
+    }).then((url) => {
+        // The library automatically handles storing the ID in its internal cache here
+        res.redirect(url);
+    }).catch(next);
+});
+
+// DO NOT manually manage req.session.saml_request_id if using validateInResponseTo
+```
+
+Redirects to PID:
+
+```text
+http://localhost:4000/saml/sso?SAMLRequest=...&RelayState=...
+```
 
 Validation:
 
@@ -762,6 +800,20 @@ Tasks:
 - If not logged in, store pending SAML data in session and redirect `/login`.
 - If logged in, continue to response generation.
 
+CRITICAL: Protect 4KB Starlette Cookie Limit:
+```python
+# DO NOT store raw XML in session - it will exceed 4KB and cause silent failures
+# request.session["pending_saml_request"] = raw_decompressed_xml  # WRONG
+
+# Instead, store only scalar values
+request.session["pending_saml"] = {
+    "id": extracted_authn_request_id,
+    "acs_url": incoming_acs_url,
+    "issuer": incoming_issuer,
+    "relay_state": request.query_params.get("RelayState"),
+}
+```
+
 Validation:
 
 ```text
@@ -781,6 +833,27 @@ Tasks:
 - Add `/saml/resume` or equivalent.
 - After user logs in, resume pending SAML request.
 - Clear pending SAML data after use.
+
+CRITICAL Session Preservation Pattern:
+```python
+# PID/app.py -> Inside /saml/sso handler and post-login hook
+pending_saml = request.session.get("pending_saml")
+
+request.session.clear()
+
+request.session["userId"] = user["id"]
+request.session["username"] = user["username"]
+request.session["role"] = user["role"]
+
+# Restore pending SAML flow into the fresh authenticated session
+if pending_saml:
+    request.session["pending_saml"] = pending_saml
+    return RedirectResponse(url="/saml/resume", status_code=302)
+
+return RedirectResponse(url="/dashboard", status_code=302)
+```
+
+Clear `pending_saml` only after `/saml/resume` successfully creates the SAMLResponse auto-post page.
 
 Validation:
 
@@ -819,9 +892,36 @@ Tasks:
 - Validate issuer, audience, recipient, expiry, and InResponseTo.
 - Compare `response.InResponseTo` to `req.session.saml_request_id`, not just field existence.
 - Configure `@node-saml/node-saml` with `validateInResponseTo: "always"` and request ID caching so the library performs this exact comparison.
-- Delete `req.session.saml_request_id` immediately after successful validation.
+- Delete `req.session.saml_request_id` immediately after successful ACS validation.
 - Create App E session.
 - Redirect dashboard.
+
+CRITICAL: URL-Encoded Body Parsing:
+```javascript
+// SAML App (App E)/app.js
+const express = require("express");
+const app = express();
+
+// REQUIRED: Parse form-urlencoded data before /saml/acs
+// PID sends SAMLResponse via standard auto-POST form
+app.use(express.urlencoded({ extended: false }));
+
+// Now /saml/acs can safely process req.body
+```
+
+CRITICAL: Use Library Validation (not manual):
+```javascript
+// Let the library handle validation using its internal cache
+app.post("/saml/acs", (req, res, next) => {
+    saml.validatePostResponseAsync(req.body).then(({ profile }) => {
+        // Library already validated signature, InResponseTo, audience, etc.
+        req.session.user = profile;
+        res.redirect("/dashboard");
+    }).catch((err) => {
+        res.status(401).send("SAML Assertion Invalid: " + err.message);
+    });
+});
+```
 
 Validation:
 
@@ -877,11 +977,12 @@ MVP must include:
 - Immediate deletion of the stored App E request ID after successful ACS validation.
 - ACS URL allowlist.
 - SP entity ID allowlist.
-- RelayState preserved but not trusted for arbitrary redirects.
+- RelayState treated as opaque state (not trusted for redirects).
 - Request ID replay protection.
 - PID Redirect-binding SAMLRequest decode uses base64 plus raw DEFLATE before XML parsing.
 - `/saml/acs` excluded from generic CSRF middleware.
 - No credential or token logging.
+- **signxml `id_attribute_name="ID"` explicitly set for SAML ID attribute recognition**.
 
 Can be added after MVP:
 
