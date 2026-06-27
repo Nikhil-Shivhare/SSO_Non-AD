@@ -27,3 +27,6 @@ Thumbs.db
 .env.*
 dist/
 build/
+CREDENTIAL_ARCHITECTURE.md
+VAULT_ARCHITECTURE_v2.md
+

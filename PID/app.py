@@ -352,6 +352,8 @@ async def admin_panel(request: Request, message: str = "", error: str = ""):
         "pid_version": "2.0.0",
     }
 
+    saml_sps = db.get_all_saml_sps()
+
     return templates.TemplateResponse("admin.html", {
         "request": request,
         "title": "Admin Panel",
@@ -365,6 +367,7 @@ async def admin_panel(request: Request, message: str = "", error: str = ""):
         "stats": stats,
         "active_sessions": active_sessions,
         "system_info": system_info,
+        "saml_sps": saml_sps,
     })
 
 
@@ -543,6 +546,89 @@ async def admin_delete_app(request: Request, app_id: str):
         return RedirectResponse(url=f"/admin?message={urllib.parse.quote(msg)}#applications", status_code=302)
     else:
         return RedirectResponse(url=f"/admin?error={urllib.parse.quote(result['error'])}#applications", status_code=302)
+
+
+# ============================================================================
+# SAML SERVICE PROVIDER ADMIN ROUTES
+# ============================================================================
+
+# POST /admin/saml-sps — Add a new SAML SP
+@app.post("/admin/saml-sps")
+async def admin_add_saml_sp(
+    request: Request,
+    name: str = Form(...),
+    entity_id: str = Form(...),
+    acs_url: str = Form(...),
+    nameid_format: str = Form(""),
+):
+    """Register a new SAML Service Provider (admin only)."""
+    session_user = get_session_user(request)
+    if not session_user or session_user["role"] != "admin":
+        raise HTTPException(status_code=403)
+
+    form_data = await request.form()
+    enabled = "enabled" in form_data
+
+    result = db.add_saml_sp(
+        name=name, entity_id=entity_id, acs_url=acs_url,
+        nameid_format=nameid_format, enabled=enabled,
+    )
+    if result.get("ok"):
+        msg = f"SAML SP '{name}' registered successfully."
+        print(f"[ADMIN] Registered SAML SP: {entity_id}")
+        return RedirectResponse(url=f"/admin?message={urllib.parse.quote(msg)}#saml-apps", status_code=302)
+    else:
+        err = result.get("error", "Unknown error")
+        return RedirectResponse(url=f"/admin?error={urllib.parse.quote(err)}#saml-apps", status_code=302)
+
+
+# POST /admin/saml-sps/{id}/update — Edit an existing SAML SP
+@app.post("/admin/saml-sps/{sp_id}/update")
+async def admin_update_saml_sp(
+    request: Request,
+    sp_id: int,
+    name: str = Form(...),
+    entity_id: str = Form(...),
+    acs_url: str = Form(...),
+    nameid_format: str = Form(""),
+):
+    """Update a SAML Service Provider (admin only)."""
+    session_user = get_session_user(request)
+    if not session_user or session_user["role"] != "admin":
+        raise HTTPException(status_code=403)
+
+    form_data = await request.form()
+    enabled = "enabled" in form_data
+
+    result = db.update_saml_sp(
+        sp_id=sp_id, name=name, entity_id=entity_id, acs_url=acs_url,
+        nameid_format=nameid_format, enabled=enabled,
+    )
+    if result.get("ok"):
+        msg = f"SAML SP '{name}' updated successfully."
+        print(f"[ADMIN] Updated SAML SP id={sp_id}")
+        return RedirectResponse(url=f"/admin?message={urllib.parse.quote(msg)}#saml-apps", status_code=302)
+    else:
+        err = result.get("error", "Unknown error")
+        return RedirectResponse(url=f"/admin?error={urllib.parse.quote(err)}#saml-apps", status_code=302)
+
+
+# POST /admin/saml-sps/{id}/delete — Hard delete a SAML SP
+@app.post("/admin/saml-sps/{sp_id}/delete")
+async def admin_delete_saml_sp(request: Request, sp_id: int):
+    """Permanently delete a SAML Service Provider (admin only)."""
+    session_user = get_session_user(request)
+    if not session_user or session_user["role"] != "admin":
+        raise HTTPException(status_code=403)
+
+    result = db.delete_saml_sp(sp_id)
+    if result.get("ok"):
+        msg = "SAML SP deleted permanently."
+        print(f"[ADMIN] Deleted SAML SP id={sp_id}")
+        return RedirectResponse(url=f"/admin?message={urllib.parse.quote(msg)}#saml-apps", status_code=302)
+    else:
+        err = result.get("error", "Unknown error")
+        return RedirectResponse(url=f"/admin?error={urllib.parse.quote(err)}#saml-apps", status_code=302)
 
 
 # POST /admin/password-policy — Update password policy

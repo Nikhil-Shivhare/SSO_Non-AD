@@ -31,16 +31,22 @@ Separating the credential store from Primary Identity (PID) into a dedicated Vau
 │ PRIMARY IDENTITY SERVICE (PID)  ─  Port 4000                             │
 │                                                                           │
 │  Owns: users, apps, user_apps, plugin_tokens, login_schema               │
+│  Owns (SAML): saml_service_providers (acts as IdP)                       │
 │  Does NOT own: vault_credentials (delegated to Vault)                    │
 │                                                                           │
-│  On vault API calls:                                                      │
+│  On vault API calls (Credential Replay):                                  │
 │    1. Validates bearer token (plugin_tokens table)                        │
 │    2. Checks user-app authorization (user_apps table)                     │
 │    3. Resolves appId string → vault_id (apps table)                       │
 │    4. Proxies request to Vault Service (internal network)                 │
 │                                                                           │
+│  On SAML calls (Federated SSO):                                           │
+│    1. Validates user session cookie                                       │
+│    2. Validates SP via saml_service_providers table                       │
+│    3. Generates and signs SAML Assertion (Vault is bypassed entirely)     │
+│                                                                           │
 │  SQLite Database (PID-only tables):                                       │
-│    users, apps, user_apps, plugin_tokens                                  │
+│    users, apps, user_apps, plugin_tokens, saml_service_providers          │
 │                                                                           │
 └───────────────────────────┬───────────────────────────────────────────────┘
                             │
@@ -106,6 +112,7 @@ Separating the credential store from Primary Identity (PID) into a dedicated Vau
 | User authentication (session)      | PID           | PID          | No change                                              |
 | Admin panel (user/app CRUD)        | PID           | PID          | No change                                              |
 | App registration + login_schema    | PID           | PID          | No change — login_schema stays in PID                  |
+| SAML Identity Provider (IdP)       | None          | **PID**      | **New** — PID natively handles SAML 2.0 assertions     |
 | User ↔ App assignment (policy)     | PID           | PID          | No change                                              |
 | Plugin token issuance + validation | PID           | PID          | No change                                              |
 | appId → vault_id resolution        | PID (database.py)| PID          | PID maps appId string to vault_id before calling Vault |
@@ -122,6 +129,17 @@ Separating the credential store from Primary Identity (PID) into a dedicated Vau
 
 ---
 
+## The Role of SAML (Bypassing the Vault)
+
+The introduction of **SAML 2.0 Federated SSO** creates a parallel authentication path that **does not use the Vault Service**. 
+
+*   **Credential Replay (Extension):** Relies on the Vault Service to retrieve plaintext (or decrypted) passwords to inject into legacy DOMs.
+*   **SAML Federated SSO:** Relies purely on the user's active session cookie in the PID. Once the user is logged into the PID, the PID generates a cryptographically signed XML Assertion and sends it to the Service Provider (e.g., App E).
+
+Because SAML relies on cryptographic trust rather than password replay, the Vault Service is completely uninvolved in the SAML authentication flow. The PID stores SAML configuration in its local `saml_service_providers` table.
+
+---
+
 ## Data Ownership Table
 
 | Data                  | Owner     | Storage         | Accessed By                |
@@ -130,6 +148,7 @@ Separating the credential store from Primary Identity (PID) into a dedicated Vau
 | apps (+ login_schema) | PID       | PID SQLite      | PID only                   |
 | user_apps             | PID       | PID SQLite      | PID only                   |
 | plugin_tokens         | PID       | PID SQLite      | PID only                   |
+| saml_service_providers| PID       | PID SQLite      | PID only                   |
 | vault_credentials     | **Vault** | **HA Postgres** | Vault only (via PID proxy) |
 | audit_log             | **Vault** | **HA Postgres** | Vault only                 |
 
@@ -420,6 +439,22 @@ Purpose: Policy enforcement.
 Purpose:
 Extension authentication
 PID validates before proxying to Vault
+
+
+🔹 Table: saml_service_providers
+
+| Column     | Type    | Constraints      | Description                                 |
+| ---------- | ------- | ---------------- | ------------------------------------------- |
+| id         | INTEGER | PK AUTOINCREMENT | SP ID                                       |
+| name       | TEXT    | NOT NULL         | Human-readable name                         |
+| entity_id  | TEXT    | UNIQUE NOT NULL  | SAML Entity ID (Issuer)                     |
+| acs_url    | TEXT    | NOT NULL         | Assertion Consumer Service URL              |
+| x509cert   | TEXT    |                  | Public cert for signed requests (optional)  |
+| enabled    | BOOLEAN | DEFAULT 1        | Feature flag                                |
+
+Purpose:
+Stores SAML SP metadata
+PID validates AuthnRequests against this table
 
 
 🟩 2️⃣ VAULT DATABASE (Postgres Primary + Replica)

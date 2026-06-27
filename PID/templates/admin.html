@@ -161,6 +161,7 @@
                 <a href="#assign-app">Assign App</a>
                 <a href="#remove-app">Remove App</a>
                 <a href="#password-policy">Password Policy</a>
+                <a href="#saml-apps">SAML Apps</a>
                 <div class="sidebar-divider"></div>
                 <a href="#active-sessions">Active Sessions</a>
                 <a href="#system-info">System Info</a>
@@ -204,6 +205,10 @@
                     <div class="stat-card purple">
                         <div class="stat-number">{{ stats.active_tokens }}</div>
                         <div class="stat-label">Active Tokens</div>
+                    </div>
+                    <div class="stat-card" style="border-top:3px solid #1a5276;">
+                        <div class="stat-number" style="color:#1a5276;">{{ saml_sps | length }}</div>
+                        <div class="stat-label">SAML SPs</div>
                     </div>
                 </div>
             </div>
@@ -443,6 +448,147 @@
                 </form>
             </div>
 
+            <!-- SAML APPS -->
+            <div class="admin-section" id="saml-apps">
+                <h2>SAML Service Providers
+                    <span style="font-size:12px;font-weight:400;color:#7f8c8d;margin-left:8px;">Managed by PID Identity Provider</span>
+                </h2>
+
+                <!-- SP list table -->
+                {% if saml_sps %}
+                <table style="margin-top:8px;">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Name</th>
+                            <th>Entity ID</th>
+                            <th>ACS URL</th>
+                            <th>NameID Format</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sp in saml_sps %}
+                        <tr id="saml-sp-row-{{ sp.id }}">
+                            <!-- VIEW MODE -->
+                            <td style="color:#95a5a6;">{{ sp.id }}</td>
+                            <td><strong>{{ sp.name }}</strong></td>
+                            <td><code style="font-size:11px;">{{ sp.entity_id }}</code></td>
+                            <td><code style="font-size:11px;">{{ sp.acs_url }}</code></td>
+                            <td style="color:#7f8c8d;font-size:12px;">
+                                {% if sp.name_id_format %}{{ sp.name_id_format }}{% else %}<span style="color:#bdc3c7;">urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified</span>{% endif %}
+                            </td>
+                            <td>
+                                {% if sp.enabled %}
+                                <span class="badge" style="background:#27ae60;color:white;">Enabled</span>
+                                {% else %}
+                                <span class="badge" style="background:#95a5a6;color:white;">Disabled</span>
+                                {% endif %}
+                            </td>
+                            <td style="white-space:nowrap;">
+                                <button type="button" class="btn-primary"
+                                    onclick="openSamlEdit({{ sp.id }}, '{{ sp.name|e }}', '{{ sp.entity_id|e }}', '{{ sp.acs_url|e }}', '{{ (sp.name_id_format or '')|e }}', {{ 1 if sp.enabled else 0 }})"
+                                >Edit</button>
+                                <form method="POST" action="/admin/saml-sps/{{ sp.id }}/delete" style="display:inline;">
+                                    <button type="submit" class="btn-danger"
+                                        onclick="return confirm('Permanently delete SAML SP &quot;{{ sp.name|e }}&quot;?\nThis action cannot be undone.')"
+                                    >Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p style="color:#95a5a6;font-size:13px;margin-top:8px;">No SAML Service Providers registered yet.</p>
+                {% endif %}
+
+                <!-- EDIT MODAL (inline, hidden by default) -->
+                <div id="saml-edit-modal" style="display:none;margin-top:20px;padding:18px;border:1px solid #aed6f1;border-radius:8px;background:#f0f8ff;">
+                    <h3 style="margin-top:0;font-size:14px;color:#1a5276;">✏️ Edit SAML Service Provider</h3>
+                    <form method="POST" id="saml-edit-form" action="">
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:12px;">
+                            <div>
+                                <label>Name <span style="color:#e74c3c;">*</span></label>
+                                <input type="text" name="name" id="edit-sp-name" required>
+                            </div>
+                            <div>
+                                <label>Status</label>
+                                <div style="margin-top:8px;">
+                                    <label style="display:inline;">
+                                        <input type="checkbox" name="enabled" value="1" id="edit-sp-enabled"> Enabled
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="margin-bottom:12px;">
+                            <label>Entity ID (Issuer) <span style="color:#e74c3c;">*</span></label>
+                            <input type="text" name="entity_id" id="edit-sp-entity-id" required style="width:100%;box-sizing:border-box;">
+                        </div>
+                        <div style="margin-bottom:12px;">
+                            <label>ACS URL <span style="color:#e74c3c;">*</span></label>
+                            <input type="text" name="acs_url" id="edit-sp-acs-url" required style="width:100%;box-sizing:border-box;">
+                        </div>
+                        <div style="margin-bottom:16px;">
+                            <label>NameID Format</label>
+                            <select name="nameid_format" id="edit-sp-nameid" style="width:100%;box-sizing:border-box;">
+                                <option value="">urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified (default)</option>
+                                <option value="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">emailAddress</option>
+                                <option value="urn:oasis:names:tc:SAML:2.0:nameid-format:persistent">persistent</option>
+                                <option value="urn:oasis:names:tc:SAML:2.0:nameid-format:transient">transient</option>
+                            </select>
+                        </div>
+                        <div style="display:flex;gap:10px;">
+                            <button type="submit" class="btn-success">Save Changes</button>
+                            <button type="button" class="btn-warning" onclick="closeSamlEdit()">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- ADD NEW SP FORM -->
+                <div style="margin-top:24px;">
+                    <h3 style="font-size:14px;color:#2c3e50;margin-bottom:12px;">+ Register New SAML Service Provider</h3>
+                    <form method="POST" action="/admin/saml-sps">
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:12px;">
+                            <div>
+                                <label>Name <span style="color:#e74c3c;">*</span></label>
+                                <input type="text" name="name" required placeholder="e.g. My App SAML SP">
+                            </div>
+                            <div>
+                                <label style="display:block;margin-bottom:4px;">Status</label>
+                                <label style="display:inline;">
+                                    <input type="checkbox" name="enabled" value="1" checked> Enabled
+                                </label>
+                            </div>
+                        </div>
+                        <div style="margin-bottom:12px;">
+                            <label>Entity ID (Issuer) <span style="color:#e74c3c;">*</span></label>
+                            <input type="text" name="entity_id" required
+                                placeholder="http://localhost:3005/saml/metadata"
+                                style="width:100%;box-sizing:border-box;">
+                        </div>
+                        <div style="margin-bottom:12px;">
+                            <label>ACS URL <span style="color:#e74c3c;">*</span></label>
+                            <input type="text" name="acs_url" required
+                                placeholder="http://localhost:3005/saml/acs"
+                                style="width:100%;box-sizing:border-box;">
+                        </div>
+                        <div style="margin-bottom:16px;">
+                            <label>NameID Format</label>
+                            <select name="nameid_format" style="width:100%;box-sizing:border-box;">
+                                <option value="">urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified (default)</option>
+                                <option value="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">emailAddress</option>
+                                <option value="urn:oasis:names:tc:SAML:2.0:nameid-format:persistent">persistent</option>
+                                <option value="urn:oasis:names:tc:SAML:2.0:nameid-format:transient">transient</option>
+                            </select>
+                            <small style="color:#95a5a6;">Leave as default unless the SP requires a specific format.</small>
+                        </div>
+                        <button type="submit" class="btn-success">Register SP</button>
+                    </form>
+                </div>
+            </div>
+
             <!-- PASSWORD POLICY -->
             <div class="admin-section" id="password-policy">
                 <h2>Password Policy
@@ -604,5 +750,27 @@
             const el = document.getElementById(id);
             if (el) el.addEventListener('input', () => { el.dataset.userEdited = '1'; });
         });
+
+        // ── SAML SP inline edit helpers ──────────────────────────────────────
+        function openSamlEdit(id, name, entityId, acsUrl, nameidFormat, enabled) {
+            const form = document.getElementById('saml-edit-form');
+            form.action = `/admin/saml-sps/${id}/update`;
+            document.getElementById('edit-sp-name').value = name;
+            document.getElementById('edit-sp-entity-id').value = entityId;
+            document.getElementById('edit-sp-acs-url').value = acsUrl;
+            document.getElementById('edit-sp-enabled').checked = !!enabled;
+            // Set nameid_format dropdown
+            const sel = document.getElementById('edit-sp-nameid');
+            for (let i = 0; i < sel.options.length; i++) {
+                sel.options[i].selected = (sel.options[i].value === nameidFormat);
+            }
+            const modal = document.getElementById('saml-edit-modal');
+            modal.style.display = 'block';
+            modal.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function closeSamlEdit() {
+            document.getElementById('saml-edit-modal').style.display = 'none';
+        }
     </script>
 {% endblock %}

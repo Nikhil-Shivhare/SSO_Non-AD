@@ -106,6 +106,14 @@ def init_database():
         );
     """)
 
+    # ── Migrate existing saml_service_providers if name_id_format column is missing
+    sp_cols = [row[1] for row in cursor.execute("PRAGMA table_info(saml_service_providers)").fetchall()]
+    if "name_id_format" not in sp_cols:
+        cursor.execute(
+            "ALTER TABLE saml_service_providers ADD COLUMN "
+            "name_id_format TEXT DEFAULT 'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified'"
+        )
+
     # Seed password policy defaults if not present
     if not cursor.execute("SELECT id FROM password_policy WHERE id = 1").fetchone():
         cursor.execute(
@@ -772,6 +780,88 @@ def get_enabled_saml_sps() -> list[dict]:
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def get_all_saml_sps() -> list[dict]:
+    """Return ALL SAML Service Provider records (enabled + disabled) for admin panel."""
+    conn = _get_db()
+    rows = conn.execute(
+        "SELECT * FROM saml_service_providers ORDER BY name"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def add_saml_sp(name: str, entity_id: str, acs_url: str,
+                nameid_format: str = "", enabled: bool = True) -> dict:
+    """Add a new SAML Service Provider. Returns {ok, error}."""
+    conn = _get_db()
+    try:
+        now = int(time.time())
+        conn.execute(
+            """
+            INSERT INTO saml_service_providers
+                (name, entity_id, acs_url, name_id_format, enabled, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (name.strip(), entity_id.strip(), acs_url.strip(),
+             nameid_format.strip(), 1 if enabled else 0, now, now),
+        )
+        conn.commit()
+        return {"ok": True}
+    except Exception as e:
+        err = str(e)
+        if "UNIQUE" in err.upper():
+            return {"error": f"Entity ID already registered: {entity_id}"}
+        return {"error": err}
+    finally:
+        conn.close()
+
+
+def update_saml_sp(sp_id: int, name: str, entity_id: str, acs_url: str,
+                   nameid_format: str = "", enabled: bool = True) -> dict:
+    """Update an existing SAML SP row by its integer ID. Returns {ok, error}."""
+    conn = _get_db()
+    try:
+        now = int(time.time())
+        cur = conn.execute(
+            """
+            UPDATE saml_service_providers
+               SET name = ?, entity_id = ?, acs_url = ?, name_id_format = ?,
+                   enabled = ?, updated_at = ?
+             WHERE id = ?
+            """,
+            (name.strip(), entity_id.strip(), acs_url.strip(),
+             nameid_format.strip(), 1 if enabled else 0, now, sp_id),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return {"error": "SP not found"}
+        return {"ok": True}
+    except Exception as e:
+        err = str(e)
+        if "UNIQUE" in err.upper():
+            return {"error": f"Entity ID already registered: {entity_id}"}
+        return {"error": err}
+    finally:
+        conn.close()
+
+
+def delete_saml_sp(sp_id: int) -> dict:
+    """Permanently delete a SAML SP by its integer ID. Returns {ok, error}."""
+    conn = _get_db()
+    try:
+        cur = conn.execute(
+            "DELETE FROM saml_service_providers WHERE id = ?", (sp_id,)
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return {"error": "SP not found"}
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        conn.close()
 
 
 def seed_saml_sp_if_missing():
