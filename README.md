@@ -1,8 +1,8 @@
-# 🔐 Non-AD SSO — Single Sign-On for Legacy Web Applications
+# 🔐 Non-AD SSO — Multi-Protocol Single Sign-On for Enterprise Apps
 
-> **A browser extension-based SSO solution that enables automatic login to legacy web applications that don't support modern identity protocols (SAML, OAuth, OIDC).**
+> **A dual-mode SSO solution providing modern SAML 2.0 Federation and a browser extension-based Credential Replay for legacy web applications.**
 
-Built as a Proof of Concept to demonstrate how organizations can bring SSO capabilities to legacy web apps **without modifying the apps themselves**.
+Built as a Proof of Concept to demonstrate how organizations can bring SSO capabilities to both modern SAML-capable apps and legacy web apps **without modifying the legacy apps themselves**.
 
 ---
 
@@ -100,10 +100,10 @@ All credentials are stored centrally in a **Primary Identity Service** (credenti
 │  │  manifest.json  ──  Permissions, content script matches        │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
 │                                                                        │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ │
-│  │ App-A (:3001)│ │ App-B (:3002)│ │ App-C (:3003)│ │ App-D (:3004)│ │
-│  │ Session-based│ │ Session+CSRF │ │ Stateless    │ │ Role-based   │ │
-│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘ │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ │
+│  │ App-A (:3001)│ │ App-B (:3002)│ │ App-C (:3003)│ │ App-D (:3004)│ │ App-E (:3005)│ │
+│  │ Session-based│ │ Session+CSRF │ │ Stateless    │ │ Role-based   │ │ SAML 2.0 SP  │ │
+│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘ │
 │                                                                        │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
 │  │ LAUNCHER (Port 3100) — Navigation UI to launch all apps        │  │
@@ -120,9 +120,10 @@ All credentials are stored centrally in a **Primary Identity Service** (credenti
 SSO_Non-AD/
 │
 ├── PID/                           # Primary Identity Service (Python/FastAPI)
-│   ├── app.py                     # FastAPI server — all 19 routes
+│   ├── app.py                     # FastAPI server — core APIs & SAML routes
 │   ├── database.py                # SQLite setup, queries, password policy
 │   ├── vault_client.py            # Async Vault HTTP proxy client
+│   ├── saml_idp.py                # SAML 2.0 Identity Provider implementation
 │   ├── database.sqlite            # Auto-generated database file
 │   ├── templates/                 # Jinja2 HTML templates
 │   │   ├── base.html              # Shared layout
@@ -159,6 +160,10 @@ SSO_Non-AD/
 │   ├── app.js                 # Login form with role selector
 │   ├── users.db
 │   └── package.json
+│
+│   ├── SAML App (App E)/          # Demo: SAML Service Provider (port 3005)
+│   │   ├── app.js                 # Express server with @node-saml/node-saml
+│   │   └── package.json
 │
 ├── launcher/                  # App launcher UI (port 3100)
 │   └── app.js                 # Simple Express server with navigation links
@@ -210,6 +215,7 @@ cd "Session based App (App A)" && npm install && cd ..
 cd "Session + CSRF App (App B)" && npm install && cd ..
 cd "Stateless App (App C)" && npm install && cd ..
 cd "Role-based login App (App D)" && npm install && cd ..
+cd "SAML App (App E)" && npm install && cd ..
 cd launcher && npm install && cd ..
 ```
 
@@ -228,6 +234,7 @@ This starts all 6 services:
 | App-B            | http://localhost:3002 | 3002 |
 | App-C            | http://localhost:3003 | 3003 |
 | App-D            | http://localhost:3004 | 3004 |
+| App-E (SAML)     | http://localhost:3005 | 3005 |
 | Launcher         | http://localhost:3100 | 3100 |
 
 ### 3. Install the Browser Extension
@@ -257,7 +264,7 @@ This starts all 6 services:
 
 ## 🖥 Demo Applications
 
-Four demo apps simulate different real-world legacy authentication scenarios:
+Five demo apps simulate different real-world legacy and modern authentication scenarios:
 
 | App     | Port | Auth Type              | Challenge for SSO                                    |
 | ------- | ---- | ---------------------- | ---------------------------------------------------- |
@@ -265,6 +272,7 @@ Four demo apps simulate different real-world legacy authentication scenarios:
 | App-B   | 3002 | Session + CSRF         | CSRF token required — extension must handle          |
 | App-C   | 3003 | Stateless (no session) | Login required on every page refresh                 |
 | App-D   | 3004 | Role-based login       | Extra field (role dropdown) beyond username/password |
+| App-E   | 3005 | SAML 2.0 SP            | Cryptographic validation, IdP trust, InResponseTo state |
 | picoCTF | N/A  | Third-Party React SPA  | Dynamic form rendering, synthetic React events       |
 
 ### Demo User Accounts
@@ -387,6 +395,7 @@ Access at: http://localhost:4000/admin (login as `admin` / `admin123`)
 | `user_apps`         | User ↔ App access control mapping                                       |
 | `plugin_tokens`     | Extension authentication tokens (token, user_id, scopes, expires_at)    |
 | `vault_credentials` | Per-user per-app credentials (app_username, app_password, extra_fields) |
+| `saml_service_providers` | Registered SAML SPs (entity_id, acs_url, x509cert) |
 
 ---
 
@@ -458,6 +467,14 @@ Updating:    Extension  →  PUT  /api/vault/password      →  SQLite vault_cre
 | GET    | `/api/vault/credentials?appId=X` | Bearer Token | Returns `{fields: {username, password...}}` |
 | POST   | `/api/vault/credentials`         | Bearer Token | Saves credentials with `{appId, fields}`    |
 | PUT    | `/api/vault/password`            | Bearer Token | Updates only password, preserves extras     |
+
+### SAML Identity Provider APIs (PID)
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| GET | `/saml/metadata` | None | Returns IdP XML metadata |
+| GET/POST | `/saml/sso` | Session | Accepts SAML AuthnRequest, redirects to login if needed |
+| GET | `/saml/resume` | Session | Resumes SAML flow after successful login |
 
 ### Bootstrap Response Example
 
@@ -603,6 +620,25 @@ User A logs out → User B logs into Primary Identity
          User B starts fresh with their own credentials
 ```
 
+### Flow 6: SAML Federated SSO (App E)
+
+```text
+User visits App-E → Clicks "Login with SAML"
+    │
+    ├──► App-E generates SAML AuthnRequest → Redirects to PID /saml/sso
+    │
+    ├──► PID validates request → Checks if user is logged in
+    │       └── If NO: Redirects to /login?saml_resume=1
+    │       └── If YES: Generates SAMLResponse
+    │
+    ├──► PID signs SAML Assertion (RSA-SHA256)
+    │
+    ├──► Auto-POSTs SAMLResponse to App-E ACS URL (/saml/acs)
+    │
+    └──► App-E verifies signature, InResponseTo, and Issuer
+            └── Login successful ✅
+```
+
 ---
 
 ## 🔒 Security Notes
@@ -632,6 +668,7 @@ User A logs out → User B logs into Primary Identity
 - ✅ **Customizable Password Policy** — admin can configure min length, uppercase, lowercase, digit, special char requirements, and disable the policy entirely from the admin dashboard
 - ✅ **User Activation/Deactivation** — admin can disable users without deleting them; deactivated users are blocked from login and all tokens are revoked immediately
 - ✅ **Admin Password Reset** — admin can reset any user's password from the admin panel; password policy is enforced, and all tokens are revoked to force re-login
+- ✅ **SAML Security** — RSA-SHA256 assertion signing, strict `InResponseTo` validation, and replay protection
 
 ---
 
@@ -676,6 +713,9 @@ sqlite3 PID/database.sqlite "SELECT * FROM password_policy;"
 
 # View plugin tokens
 sqlite3 PID/database.sqlite "SELECT * FROM plugin_tokens;"
+
+# View SAML Service Providers
+sqlite3 PID/database.sqlite "SELECT * FROM saml_service_providers;"
 ```
 
 ### View Logs
@@ -686,6 +726,7 @@ tail -f /tmp/app1.log               # Session based App (App A)
 tail -f /tmp/app2.log               # Session + CSRF App (App B)
 tail -f /tmp/app3.log               # Stateless App (App C)
 tail -f /tmp/app4.log               # Role-based login App (App D)
+tail -f /tmp/app5.log               # SAML App (App E)
 ```
 
 ### Manage Services

@@ -115,51 +115,191 @@ function requireAuth(req, res, next) {
 // HTML helpers
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// App identity — acts as a simple internal document portal for demo purposes
+// ---------------------------------------------------------------------------
+const APP_NAME    = 'AccopsPortal';
+const APP_TAGLINE = 'Internal Document & Resource Portal';
+
 function page(title, body) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title} — App E (SAML SP)</title>
+  <title>${title} — ${APP_NAME}</title>
+  <meta name="description" content="${APP_NAME} — ${APP_TAGLINE}">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/theme.css">
   <script src="/shared/app-features.js" defer></script>
   <style>
-    .saml-badge {
-      display: inline-flex; align-items: center; gap: 8px;
-      background: linear-gradient(135deg, #1e3a5f 0%, #2d6a9f 100%);
-      color: #fff; padding: 6px 14px; border-radius: 20px;
-      font-size: 0.78rem; font-weight: 600; letter-spacing: 0.5px;
-      margin-bottom: 20px;
+    /* ── SSO / identity badge ── */
+    .sso-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: linear-gradient(135deg, #0f2d52 0%, #1a5276 100%);
+      color: #a8d8f0; padding: 5px 13px; border-radius: 20px;
+      font-size: 0.74rem; font-weight: 600; letter-spacing: 0.6px;
+      text-transform: uppercase; margin-bottom: 22px;
     }
-    .saml-badge::before { content: "🔐"; font-size: 1rem; }
-    .saml-attrs { width: 100%; border-collapse: collapse; margin-top: 16px; }
-    .saml-attrs th {
-      background: rgba(45, 106, 159, 0.15); padding: 10px 14px;
-      text-align: left; font-size: 0.82rem; font-weight: 600;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
+    .sso-badge::before { content: '🔒'; }
+
+    /* ── App header bar (login page) ── */
+    .app-header {
+      text-align: center; margin-bottom: 8px;
     }
-    .saml-attrs td { padding: 10px 14px; font-size: 0.9rem; border-bottom: 1px solid rgba(255,255,255,0.05); }
-    .saml-attrs tr:last-child td { border-bottom: none; }
-    .saml-btn {
-      display: inline-flex; align-items: center; gap: 10px;
-      background: linear-gradient(135deg, #1e3a5f 0%, #2d6a9f 100%);
-      color: #fff; text-decoration: none; padding: 14px 28px;
-      border-radius: 10px; font-weight: 600; font-size: 1rem;
-      transition: opacity 0.2s, transform 0.15s; border: none; cursor: pointer;
+    .app-header .app-icon {
+      font-size: 2.4rem; display: block; margin-bottom: 6px;
     }
-    .saml-btn:hover { opacity: 0.88; transform: translateY(-1px); }
-    .error-box {
-      background: rgba(220,50,50,0.15); border: 1px solid rgba(220,50,50,0.4);
-      border-radius: 8px; padding: 14px 18px; color: #ff6b6b;
-      margin-bottom: 20px; font-size: 0.9rem;
+    .app-header h1 { font-size: 1.7rem; margin-bottom: 4px; }
+    .app-header .tagline {
+      font-size: 0.82rem; color: #636e72; margin-top: 0;
     }
-    .info-box {
-      background: rgba(45,106,159,0.15); border: 1px solid rgba(45,106,159,0.4);
-      border-radius: 8px; padding: 14px 18px; color: #7ec8e3;
-      margin-bottom: 20px; font-size: 0.9rem;
+
+    /* ── Login card ── */
+    .login-card {
+      background: rgba(255,255,255,0.72);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255,255,255,0.85);
+      border-radius: 16px;
+      padding: 38px 40px 32px;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.09);
+      width: 100%; max-width: 420px;
+      margin: 12px auto;
+      text-align: center;
     }
+    .login-card .divider {
+      border: none; border-top: 1px solid rgba(0,0,0,0.08);
+      margin: 22px 0;
+    }
+    .login-card .hint {
+      font-size: 0.78rem; color: #b2bec3; margin-top: 18px; line-height: 1.5;
+    }
+
+    /* ── Primary SSO button ── */
+    .btn-sso {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      width: 100%;
+      background: linear-gradient(135deg, #1a5276 0%, #2980b9 100%);
+      color: #fff; text-decoration: none;
+      padding: 14px 20px; border-radius: 10px;
+      font-weight: 600; font-size: 0.97rem;
+      transition: opacity 0.18s, transform 0.15s, box-shadow 0.18s;
+      box-shadow: 0 4px 14px rgba(26,82,118,0.28);
+      border: none; cursor: pointer;
+    }
+    .btn-sso:hover {
+      opacity: 0.9; transform: translateY(-2px);
+      box-shadow: 0 7px 20px rgba(26,82,118,0.35);
+      text-decoration: none; color: #fff;
+    }
+    .btn-sso .icon { font-size: 1.15rem; }
+
+    /* ── Profile header (dashboard) ── */
+    .profile-card {
+      background: linear-gradient(135deg, #0f2d52 0%, #1a5276 100%);
+      border-radius: 14px 14px 0 0;
+      padding: 26px 28px 22px;
+      color: #fff;
+      display: flex; align-items: center; gap: 16px;
+    }
+    .profile-card .avatar {
+      width: 52px; height: 52px; border-radius: 50%;
+      background: rgba(255,255,255,0.18);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.5rem; flex-shrink: 0;
+    }
+    .profile-card .info h2 {
+      color: #fff; font-size: 1.15rem; margin: 0 0 3px;
+      text-align: left;
+    }
+    .profile-card .info .sub {
+      font-size: 0.8rem; color: rgba(255,255,255,0.65);
+      text-align: left; margin: 0;
+    }
+    .profile-card .role-pill {
+      margin-left: auto; flex-shrink: 0;
+      background: rgba(255,255,255,0.18);
+      color: #a8d8f0; padding: 4px 11px; border-radius: 12px;
+      font-size: 0.75rem; font-weight: 600; text-transform: capitalize;
+    }
+
+    /* ── Dashboard body panels ── */
+    .dash-body {
+      background: rgba(255,255,255,0.72);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255,255,255,0.85);
+      border-top: none;
+      border-radius: 0 0 14px 14px;
+      padding: 24px 28px 28px;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.09);
+      width: 100%; max-width: 480px;
+    }
+    .dash-wrapper {
+      width: 100%; max-width: 480px; margin: 20px auto;
+    }
+
+    /* ── Quick-action links ── */
+    .quick-actions { margin: 8px 0 20px; }
+    .quick-actions a {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 14px; border-radius: 9px;
+      background: rgba(255,255,255,0.7);
+      border: 1px solid rgba(0,0,0,0.06);
+      color: #2d3436; text-decoration: none;
+      font-size: 0.9rem; font-weight: 500;
+      margin-bottom: 8px;
+      transition: all 0.18s;
+    }
+    .quick-actions a:hover {
+      background: #fff; border-color: rgba(0,0,0,0.1);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+      text-decoration: none;
+    }
+    .quick-actions a .qa-icon { font-size: 1.1rem; }
+    .quick-actions a.danger { color: #c0392b; }
+    .quick-actions a.danger:hover { border-color: rgba(192,57,43,0.25); }
+
+    /* ── Identity details table ── */
+    .id-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    .id-table tr:not(:last-child) td { border-bottom: 1px solid rgba(0,0,0,0.06); }
+    .id-table td { padding: 9px 4px; font-size: 0.85rem; }
+    .id-table td:first-child { color: #636e72; width: 42%; }
+    .id-table td:last-child { color: #2d3436; font-weight: 500; word-break: break-all; }
+    .id-table code { font-size: 0.78rem; color: #6c5ce7; background: rgba(108,92,231,0.08); padding: 2px 6px; border-radius: 4px; }
+
+    /* ── Section label ── */
+    .section-label {
+      font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1px; color: #b2bec3; margin: 18px 0 10px;
+    }
+
+    /* ── Error page ── */
+    .err-card {
+      background: rgba(255,255,255,0.72);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(255,255,255,0.85);
+      border-radius: 16px; padding: 40px;
+      text-align: center; max-width: 420px;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.09);
+    }
+    .err-icon { font-size: 2.8rem; margin-bottom: 14px; }
+    .err-msg {
+      background: rgba(220,50,50,0.1); border: 1px solid rgba(220,50,50,0.25);
+      border-radius: 8px; padding: 12px 16px;
+      color: #c0392b; font-size: 0.88rem; margin: 18px 0 22px;
+      text-align: left; line-height: 1.5;
+    }
+    .btn-back {
+      display: inline-block; padding: 11px 24px;
+      background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+      color: #fff; border-radius: 9px; font-weight: 600;
+      text-decoration: none; font-size: 0.93rem;
+      transition: opacity 0.18s, transform 0.15s;
+    }
+    .btn-back:hover { opacity: 0.88; transform: translateY(-1px); text-decoration: none; color: #fff; }
   </style>
 </head>
 <body>
@@ -169,64 +309,96 @@ function page(title, body) {
 }
 
 function loginPage(error) {
-  const errorHtml = error
-    ? `<div class="error-box">⚠️ ${error}</div>`
+  const errHtml = error
+    ? `<p class="hint" style="color:#c0392b; margin-top:14px;">⚠ ${error}</p>`
     : '';
-  return page('Login', `
-  <h1>App-E &mdash; SAML Service Provider</h1>
-  <div class="saml-badge">SAML 2.0 Federated SSO</div>
-  ${errorHtml}
-  <div class="info-box">
-    This application delegates authentication to the Primary Identity Service (PID)
-    using the SAML 2.0 standard. No local password is required.
+  return page('Sign In', `
+  <div class="app-header">
+    <span class="app-icon">📂</span>
+    <h1>${APP_NAME}</h1>
+    <p class="tagline">${APP_TAGLINE}</p>
   </div>
-  <h2>Sign In</h2>
-  <p>Click below to be redirected to the PID Identity Provider for authentication.</p>
-  <a id="saml-login-btn" href="/saml/login" class="saml-btn">
-    🔐 Login with PID SAML SSO
-  </a>
-  <p style="margin-top:28px; font-size:0.82rem; opacity:0.6;">
-    You will be redirected to <code>http://localhost:4000/login</code> if you are not already authenticated.
-  </p>
+  <div class="login-card">
+    <div class="sso-badge">SAML 2.0 Federated SSO</div>
+    <p style="font-size:0.88rem; color:#636e72; margin-bottom:18px;">
+      Sign in with your organisation identity. No separate password needed for this app.
+    </p>
+    <a id="saml-login-btn" href="/saml/login" class="btn-sso">
+      <span class="icon">🔑</span>
+      Continue with PID Single Sign-On
+    </a>
+    ${errHtml}
+    <hr class="divider">
+    <p class="hint">
+      Powered by <strong>PID Identity Provider</strong> · SAML 2.0 Bearer Assertion<br>
+      Your credentials are managed centrally — this portal does not store passwords.
+    </p>
+  </div>
 `);
 }
 
 function dashboardPage(user) {
   const loginTime = user.loginTime
-    ? new Date(user.loginTime).toLocaleString()
+    ? new Date(user.loginTime).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
     : 'N/A';
+  const initials = (user.username || '?')[0].toUpperCase();
+  const emailDisplay = user.email || `${user.username}@example.local`;
+
   return page('Dashboard', `
-  <h1>App-E Dashboard</h1>
-  <div class="saml-badge">Authenticated via SAML SSO</div>
-  <div class="welcome">
-    <strong>Welcome, ${user.username}!</strong>
-    <p>You are logged in to App-E through the PID SAML Identity Provider.</p>
-  </div>
-  <div class="menu">
-    <h2>SAML Assertion Details</h2>
-    <table class="saml-attrs">
-      <tr><th>Attribute</th><th>Value</th></tr>
-      <tr><td>Username (NameID)</td><td><strong>${user.username}</strong></td></tr>
-      <tr><td>Role</td><td>${user.role || 'N/A'}</td></tr>
-      <tr><td>Email</td><td>${user.email || 'N/A'}</td></tr>
-      <tr><td>Issuer (IdP)</td><td><code>${user.issuer || 'N/A'}</code></td></tr>
-      <tr><td>Login Method</td><td>SAML 2.0 Bearer Assertion</td></tr>
-      <tr><td>Session Established</td><td>${loginTime}</td></tr>
-    </table>
-    <br>
-    <h3>Navigation</h3>
-    <a href="/logout" style="color:#ff6b6b;">Logout from App-E</a>
-    &nbsp;&nbsp;|&nbsp;&nbsp;
-    <a href="http://localhost:4000/dashboard" target="_blank">Open PID Dashboard</a>
+  <div class="dash-wrapper">
+    <div class="profile-card">
+      <div class="avatar">${initials}</div>
+      <div class="info">
+        <h2>${user.username}</h2>
+        <p class="sub">${emailDisplay}</p>
+      </div>
+      <span class="role-pill">${user.role || 'user'}</span>
+    </div>
+    <div class="dash-body">
+
+      <p class="section-label">Quick Actions</p>
+      <div class="quick-actions">
+        <a href="#" id="docs-link">
+          <span class="qa-icon">📄</span> My Documents
+          <span style="margin-left:auto; font-size:0.75rem; color:#b2bec3;">Demo</span>
+        </a>
+        <a href="#" id="team-link">
+          <span class="qa-icon">👥</span> Team Directory
+          <span style="margin-left:auto; font-size:0.75rem; color:#b2bec3;">Demo</span>
+        </a>
+        <a href="http://localhost:4000/dashboard" target="_blank" id="pid-link">
+          <span class="qa-icon">🏛</span> Open PID Identity Centre
+          <span style="margin-left:auto; font-size:0.75rem; color:#b2bec3;">↗</span>
+        </a>
+        <a href="/logout" class="danger" id="logout-link">
+          <span class="qa-icon">🚪</span> Sign out of ${APP_NAME}
+        </a>
+      </div>
+
+      <p class="section-label">Active Identity</p>
+      <table class="id-table">
+        <tr><td>Signed in as</td><td><strong>${user.username}</strong></td></tr>
+        <tr><td>Email</td><td>${emailDisplay}</td></tr>
+        <tr><td>Role</td><td>${user.role || 'user'}</td></tr>
+        <tr><td>Identity Provider</td><td><code>${user.issuer || 'http://localhost:4000/saml/metadata'}</code></td></tr>
+        <tr><td>Auth method</td><td>SAML 2.0 Bearer Assertion</td></tr>
+        <tr><td>Session started</td><td>${loginTime}</td></tr>
+      </table>
+
+    </div>
   </div>
 `);
 }
 
 function errorPage(code, message, detail) {
-  return page(`${code} Error`, `
-  <h1>${code} — ${message}</h1>
-  <div class="error-box">${detail}</div>
-  <a href="/login">← Back to Login</a>
+  return page(`${code} — Error`, `
+  <div class="err-card">
+    <div class="err-icon">${code >= 500 ? '⚙️' : '🔒'}</div>
+    <h1 style="font-size:1.4rem; margin-bottom:6px;">${message}</h1>
+    <p style="color:#636e72; font-size:0.88rem; margin-bottom:0;">Something went wrong during sign-in.</p>
+    <div class="err-msg">${detail}</div>
+    <a href="/login" class="btn-back">← Back to Sign In</a>
+  </div>
 `);
 }
 
