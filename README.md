@@ -225,17 +225,18 @@ cd launcher && npm install && cd ..
 ./start-all.sh
 ```
 
-This starts all 6 services:
+This starts all 8 services:
 
-| Service          | URL                   | Port |
-| ---------------- | --------------------- | ---- |
-| Primary Identity | http://localhost:4000 | 4000 |
-| App-A            | http://localhost:3001 | 3001 |
-| App-B            | http://localhost:3002 | 3002 |
-| App-C            | http://localhost:3003 | 3003 |
-| App-D            | http://localhost:3004 | 3004 |
-| App-E (SAML)     | http://localhost:3005 | 3005 |
-| Launcher         | http://localhost:3100 | 3100 |
+| Service                       | URL                     | Port |
+| ----------------------------- | ----------------------- | ---- |
+| Vault Service (Docker)        | http://localhost:5000   | 5000 |
+| Primary Identity (PID)        | http://localhost:4000   | 4000 |
+| Session based App (App A)     | http://localhost:3001   | 3001 |
+| Session + CSRF App (App B)    | http://localhost:3002   | 3002 |
+| Stateless App (App C)         | http://localhost:3003   | 3003 |
+| Role-based login App (App D)  | http://localhost:3004   | 3004 |
+| SAML App (App E)              | http://localhost:3005   | 3005 |
+| Launcher                      | http://localhost:3100   | 3100 |
 
 ### 3. Install the Browser Extension
 
