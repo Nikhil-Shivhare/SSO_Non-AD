@@ -92,12 +92,20 @@ app.get('/', (req, res) => {
         </div>
         
         <div class="app-item">
-            <h3>App D — Role-based login app</h3>
+            <h3>App D &mdash; Role-based login app</h3>
             <p>Requires role selection during login - breaks naive SSO credential replay</p>
             <a href="http://localhost:3004/login" target="_blank">Launch App D</a>
         </div>
-    </div>
-    
+
+        <div class="app-item" style="border-left-color:#1e3a5f;">
+            <h3>App E &mdash; SAML Federated SSO &#128272;</h3>
+            <p>
+                SAML 2.0 Service Provider &mdash; delegates authentication to the PID Identity Provider.<br>
+                <strong>No username/password in App E</strong>: login is federated via signed SAML assertion.
+            </p>
+            <a href="http://localhost:3005/login" target="_blank" style="background:#1e3a5f;">Launch App E (SAML)</a>
+            <a href="http://localhost:3005/saml/metadata" target="_blank" style="background:#555; margin-left:6px;">SP Metadata</a>
+        </div>
     </div>
 
     <div class="note">
