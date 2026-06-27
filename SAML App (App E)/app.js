@@ -244,9 +244,10 @@ app.get('/login', (req, res) => {
 // GET /saml/login — generate AuthnRequest and redirect to PID IdP
 app.get('/saml/login', async (req, res) => {
   try {
-    const { context: redirectUrl } = await saml.getAuthorizeUrlAsync(
-      '',   // RelayState (empty for MVP)
-      req,
+    // node-saml v5: getAuthorizeUrlAsync returns a plain string URL
+    const redirectUrl = await saml.getAuthorizeUrlAsync(
+      '',    // RelayState (empty for MVP)
+      undefined,
       {}
     );
     console.log('[App-E] Redirecting to PID SAML SSO:', redirectUrl.substring(0, 80) + '...');

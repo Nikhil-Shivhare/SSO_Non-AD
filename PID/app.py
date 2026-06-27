@@ -787,15 +787,6 @@ async def api_vault_update_password(request: Request):
 
 
 # ============================================================================
-# MAIN ENTRY POINT
-# ============================================================================
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=4000)
-
-
-# ============================================================================
 # SAML IDENTITY PROVIDER ROUTES
 # ============================================================================
 
@@ -841,7 +832,6 @@ async def saml_sso(request: Request, SAMLRequest: str = "", RelayState: str = ""
 
     request_id = parsed["request_id"]
     issuer     = parsed["issuer"]
-    # ACS URL from the request itself is advisory; we always look it up from DB.
 
     # --- Validate SP entity ID ---
     sp = db.get_saml_sp_by_entity_id(issuer)
@@ -932,3 +922,12 @@ async def saml_resume(request: Request):
         relay_state=relay_state,
     )
     return HTMLResponse(content=html)
+
+
+# ============================================================================
+# MAIN ENTRY POINT
+# ============================================================================
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=4000)

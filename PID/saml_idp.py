@@ -176,11 +176,17 @@ def build_saml_response(
     SAMLP = NS["samlp"]
     SAML  = NS["saml"]
 
+    # lxml requires namespace declarations via nsmap, NOT xmlns: attributes
+    nsmap = {
+        "samlp": SAMLP,
+        "saml":  SAML,
+        "ds":    NS["ds"],
+    }
+
     response = etree.Element(
         f"{{{SAMLP}}}Response",
+        nsmap=nsmap,
         attrib={
-            "xmlns:samlp": SAMLP,
-            "xmlns:saml":  SAML,
             "ID":           response_id,
             "Version":      "2.0",
             "IssueInstant": _ts(now),
@@ -208,7 +214,6 @@ def build_saml_response(
         response,
         f"{{{SAML}}}Assertion",
         attrib={
-            "xmlns:saml": SAML,
             "ID":          assertion_id,
             "Version":     "2.0",
             "IssueInstant": _ts(now),
@@ -298,7 +303,11 @@ def build_saml_response(
     _add_attr("email",    email)
 
     # -----------------------------------------------------------------------
-    # 3. Sign the Assertion element only (enveloped signature)
+    # 3. Sign the Assertion element directly (enveloped signature)
+    #
+    # signxml requires that the signed element IS the element passed to .sign()
+    # (or its root). We therefore sign the Assertion separately, then
+    # re-build the full Response around the signed Assertion.
     # -----------------------------------------------------------------------
     key_pem  = load_key_pem()
     cert_pem = load_cert_pem()
@@ -310,15 +319,19 @@ def build_saml_response(
         c14n_algorithm="http://www.w3.org/2001/10/xml-exc-c14n#",
     )
 
-    # Sign only the Assertion element (reference by ID)
-    signed_root = signer.sign(
-        response,
+    # Sign the Assertion element (signxml inserts Signature inside Assertion)
+    signed_assertion = signer.sign(
+        assertion,
         key=key_pem,
         cert=cert_pem,
         reference_uri=f"#{assertion_id}",
     )
 
-    return etree.tostring(signed_root, xml_declaration=True, encoding="UTF-8")
+    # Replace the unsigned assertion in the Response with the signed one
+    response.remove(assertion)
+    response.append(signed_assertion)
+
+    return etree.tostring(response, xml_declaration=True, encoding="UTF-8")
 
 
 # ---------------------------------------------------------------------------
