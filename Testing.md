@@ -526,6 +526,31 @@ Or use the project script: `./start-all.sh` / `./stop-all.sh`
 | PID dashboard regression | ✅ PASS | 2026-06-27 |
 | Apps A–D regression (ports 3001–3004) | ✅ PASS | 2026-06-27 |
 | SAML SP table in SQLite | ✅ PASS | 2026-06-27 |
+| SAML SP access authorization (Access Denied page) | ✅ PASS | 2026-06-28 |
+| Unified SP Registry Database Sync | ✅ PASS | 2026-06-28 |
+
+### 11.10 Test Case: SAML Access Authorization (Access Denied)
+
+We verify that users who are not explicitly assigned to a SAML application are blocked from logging in.
+
+1. In the admin dashboard, unassign `App E SAML Demo` from `testuser`.
+2. Visit `http://localhost:3005` (App E) and click **Login with PID SAML SSO**.
+3. Log in to the PID using `testuser` credentials.
+4. **Expected Result**: Instead of generating a SAML assertion, the PID responds with `403 Forbidden` and renders a styled "Access Denied" page stating that the user is not assigned to the application.
+
+### 11.11 Test Case: Unified SP Registry Database Sync
+
+We verify that creating, updating, or deleting a SAML SP in the SAML Apps tab automatically synchronizes the general `apps` table.
+
+1. Log in to the Admin Panel (`/admin`) and navigate to the **SAML Apps** tab.
+2. Register a new SP with Entity ID `http://new-saml-app/metadata`.
+3. Query the `apps` table: `SELECT * FROM apps WHERE appId = 'http://new-saml-app/metadata';`.
+4. **Expected Result**: A corresponding row with `login_schema = 'SAML'` is present.
+5. In the main **Applications** grid card, click **Remove** on the new app.
+6. Query both tables:
+   - `SELECT * FROM apps WHERE appId = 'http://new-saml-app/metadata';`
+   - `SELECT * FROM saml_service_providers WHERE entity_id = 'http://new-saml-app/metadata';`
+7. **Expected Result**: The app has been successfully removed from both tables.
 
 ---
 

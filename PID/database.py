@@ -392,13 +392,21 @@ def get_all_apps() -> list[dict]:
         LEFT JOIN user_apps ua ON a.id = ua.app_id
         GROUP BY a.id
     """).fetchall()
-    conn.close()
     apps = []
     for r in rows:
         app = dict(r)
         schema = app.get("login_schema", "") or ""
-        app["schema_type"] = "Role-based" if "role" in schema else "Standard"
+        if schema == "SAML":
+            app["schema_type"] = "SAML"
+            sp = conn.execute("SELECT name, enabled FROM saml_service_providers WHERE entity_id = ?", (app["appId"],)).fetchone()
+            app["name"] = sp["name"] if sp else app["appId"]
+            app["enabled"] = bool(sp["enabled"]) if sp else True
+        else:
+            app["schema_type"] = "Role-based" if "role" in schema else "Standard"
+            app["name"] = app["appId"]
+            app["enabled"] = True
         apps.append(app)
+    conn.close()
     return apps
 
 
@@ -438,14 +446,19 @@ def delete_app(app_id: str) -> dict:
     """Delete an application by appId. Returns {success, error?}."""
     conn = _get_db()
     try:
-        # Remove user_app assignments first
-        row = conn.execute("SELECT id FROM apps WHERE appId = ?", (app_id,)).fetchone()
-        if not row:
+        # Check if it is a SAML SP
+        app_row = conn.execute("SELECT id, login_schema FROM apps WHERE appId = ?", (app_id,)).fetchone()
+        if not app_row:
             return {"success": False, "error": f"App '{app_id}' not found."}
-        conn.execute("DELETE FROM user_apps WHERE app_id = ?", (row["id"],))
+
+        if app_row["login_schema"] == "SAML":
+            # Delete from saml_service_providers table as well!
+            conn.execute("DELETE FROM saml_service_providers WHERE entity_id = ?", (app_id,))
+
+        conn.execute("DELETE FROM user_apps WHERE app_id = ?", (app_row["id"],))
         conn.execute("DELETE FROM apps WHERE appId = ?", (app_id,))
         conn.commit()
-        print(f"[DB] Deleted app: {app_id}")
+        print(f"[DB] Deleted app (and potential SAML SP): {app_id}")
         return {"success": True}
     finally:
         conn.close()
@@ -462,14 +475,21 @@ def get_user_apps(user_id: int) -> list[dict]:
         """,
         (user_id,),
     ).fetchall()
-    conn.close()
-    
     apps = []
     for r in rows:
         app = dict(r)
         schema = app.get("login_schema", "") or ""
-        app["schema_type"] = "Role-based" if "role" in schema else "Standard"
+        if schema == "SAML":
+            app["schema_type"] = "SAML"
+            sp = conn.execute("SELECT name, enabled FROM saml_service_providers WHERE entity_id = ?", (app["appId"],)).fetchone()
+            app["name"] = sp["name"] if sp else app["appId"]
+            app["enabled"] = bool(sp["enabled"]) if sp else True
+        else:
+            app["schema_type"] = "Role-based" if "role" in schema else "Standard"
+            app["name"] = app["appId"]
+            app["enabled"] = True
         apps.append(app)
+    conn.close()
     return apps
 
 
@@ -807,6 +827,20 @@ def add_saml_sp(name: str, entity_id: str, acs_url: str,
             (name.strip(), entity_id.strip(), acs_url.strip(),
              nameid_format.strip(), 1 if enabled else 0, now, now),
         )
+        # Derive origin from ACS URL
+        try:
+            origin = "/".join(acs_url.split("/", 3)[:3])
+        except Exception:
+            origin = acs_url
+
+        # Sync to apps table
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO apps (appId, origin, login_schema, login_url, logout_url, password_url)
+            VALUES (?, ?, 'SAML', ?, '', '')
+            """,
+            (entity_id.strip(), origin, entity_id.strip())
+        )
         conn.commit()
         return {"ok": True}
     except Exception as e:
@@ -823,6 +857,10 @@ def update_saml_sp(sp_id: int, name: str, entity_id: str, acs_url: str,
     """Update an existing SAML SP row by its integer ID. Returns {ok, error}."""
     conn = _get_db()
     try:
+        # Get old entity_id
+        old_sp = conn.execute("SELECT entity_id FROM saml_service_providers WHERE id = ?", (sp_id,)).fetchone()
+        old_entity_id = old_sp["entity_id"] if old_sp else None
+
         now = int(time.time())
         cur = conn.execute(
             """
@@ -834,9 +872,25 @@ def update_saml_sp(sp_id: int, name: str, entity_id: str, acs_url: str,
             (name.strip(), entity_id.strip(), acs_url.strip(),
              nameid_format.strip(), 1 if enabled else 0, now, sp_id),
         )
-        conn.commit()
         if cur.rowcount == 0:
             return {"error": "SP not found"}
+
+        # Update corresponding app in apps table
+        if old_entity_id:
+            try:
+                origin = "/".join(acs_url.split("/", 3)[:3])
+            except Exception:
+                origin = acs_url
+            conn.execute(
+                """
+                UPDATE apps
+                   SET appId = ?, origin = ?, login_url = ?
+                 WHERE appId = ?
+                """,
+                (entity_id.strip(), origin, entity_id.strip(), old_entity_id)
+            )
+
+        conn.commit()
         return {"ok": True}
     except Exception as e:
         err = str(e)
@@ -851,6 +905,16 @@ def delete_saml_sp(sp_id: int) -> dict:
     """Permanently delete a SAML SP by its integer ID. Returns {ok, error}."""
     conn = _get_db()
     try:
+        # Get entity_id first
+        sp = conn.execute("SELECT entity_id FROM saml_service_providers WHERE id = ?", (sp_id,)).fetchone()
+        if sp:
+            entity_id = sp["entity_id"]
+            # Delete from user_apps assignment for this app
+            app = conn.execute("SELECT id FROM apps WHERE appId = ?", (entity_id,)).fetchone()
+            if app:
+                conn.execute("DELETE FROM user_apps WHERE app_id = ?", (app["id"],))
+                conn.execute("DELETE FROM apps WHERE appId = ?", (entity_id,))
+
         cur = conn.execute(
             "DELETE FROM saml_service_providers WHERE id = ?", (sp_id,)
         )
@@ -867,6 +931,13 @@ def delete_saml_sp(sp_id: int) -> dict:
 def seed_saml_sp_if_missing():
     """Seed App E SP row if not already present (idempotent)."""
     conn = _get_db()
+    # Update existing seed if it has the old name
+    conn.execute(
+        "UPDATE saml_service_providers SET name = ? WHERE entity_id = ? AND name = ?",
+        ("app_e", "http://localhost:3005/saml/metadata", "App E SAML Demo")
+    )
+    conn.commit()
+
     existing = conn.execute(
         "SELECT id FROM saml_service_providers WHERE entity_id = ?",
         ("http://localhost:3005/saml/metadata",),
@@ -882,13 +953,56 @@ def seed_saml_sp_if_missing():
             (
                 "http://localhost:3005/saml/metadata",
                 "http://localhost:3005/saml/acs",
-                "App E SAML Demo",
+                "app_e",
                 now,
                 now,
             ),
         )
+        # Also seed in apps table
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO apps (appId, origin, login_schema, login_url, logout_url, password_url)
+            VALUES (?, ?, 'SAML', ?, '', '')
+            """,
+            (
+                "http://localhost:3005/saml/metadata",
+                "http://localhost:3005",
+                "http://localhost:3005/saml/metadata"
+            )
+        )
+        # Assign to testuser
+        test_user = conn.execute("SELECT id FROM users WHERE username = ?", ("testuser",)).fetchone()
+        app_row = conn.execute("SELECT id FROM apps WHERE appId = ?", ("http://localhost:3005/saml/metadata",)).fetchone()
+        if test_user and app_row:
+            conn.execute(
+                "INSERT OR IGNORE INTO user_apps (user_id, app_id) VALUES (?, ?)",
+                (test_user["id"], app_row["id"])
+            )
         conn.commit()
-        print("[DB] Seeded App E SAML Service Provider")
+        print("[DB] Seeded App E SAML Service Provider & App entry")
     else:
+        # Ensure it also exists in apps table (for backward compatibility / existing database.sqlite files)
+        app_exists = conn.execute("SELECT id FROM apps WHERE appId = ?", ("http://localhost:3005/saml/metadata",)).fetchone()
+        if not app_exists:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO apps (appId, origin, login_schema, login_url, logout_url, password_url)
+                VALUES (?, ?, 'SAML', ?, '', '')
+                """,
+                (
+                    "http://localhost:3005/saml/metadata",
+                    "http://localhost:3005",
+                    "http://localhost:3005/saml/metadata"
+                )
+            )
+            test_user = conn.execute("SELECT id FROM users WHERE username = ?", ("testuser",)).fetchone()
+            app_row = conn.execute("SELECT id FROM apps WHERE appId = ?", ("http://localhost:3005/saml/metadata",)).fetchone()
+            if test_user and app_row:
+                conn.execute(
+                    "INSERT OR IGNORE INTO user_apps (user_id, app_id) VALUES (?, ?)",
+                    (test_user["id"], app_row["id"])
+                )
+            conn.commit()
+            print("[DB] Back-filled App E SAML Service Provider in apps table")
         print("[DB] SAML SP for App E already exists")
     conn.close()

@@ -330,7 +330,7 @@ async def admin_panel(request: Request, message: str = "", error: str = ""):
     # Enrich users with their assigned app list
     for user in users:
         user_apps = db.get_user_apps(user["id"])
-        user["app_list"] = ", ".join(a["appId"] for a in user_apps) or "None"
+        user["app_list"] = ", ".join(a.get("name") or a["appId"] for a in user_apps) or "None"
 
     non_admin_users = [u for u in users if u["role"] != "admin"]
 
@@ -522,7 +522,7 @@ async def admin_add_app(
 
 
 # POST /admin/apps/{app_id}/delete — Delete a registered application
-@app.post("/admin/apps/{app_id}/delete")
+@app.post("/admin/apps/{app_id:path}/delete")
 async def admin_delete_app(request: Request, app_id: str):
     """Delete a registered application (admin only). Cannot delete demo apps."""
     session_user = get_session_user(request)
@@ -947,7 +947,35 @@ async def saml_sso(request: Request, SAMLRequest: str = "", RelayState: str = ""
         print(f"[SAML] User not authenticated — storing pending SAML and redirecting to /login")
         return RedirectResponse(url="/login", status_code=302)
 
-    # Already logged in — generate response immediately
+    # Already logged in — check authorization
+    if not db.is_user_allowed_app(user["userId"], issuer):
+        print(f"[SAML] Access Denied: User {user['username']} is not assigned to {issuer}")
+        app_name = sp.get("name") or issuer
+        html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>Access Denied</title>
+    <style>
+        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f7fa; color: #333; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
+        .card {{ background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 450px; border-top: 4px solid #e74c3c; }}
+        h1 {{ color: #e74c3c; font-size: 24px; margin-top: 0; }}
+        p {{ font-size: 15px; line-height: 1.6; color: #555; }}
+        .btn {{ display: inline-block; margin-top: 20px; padding: 10px 20px; background-color: #3498db; color: white; text-decoration: none; border-radius: 4px; font-weight: 600; }}
+        .btn:hover {{ background-color: #2980b9; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Access Denied</h1>
+        <p>You are not authorized or assigned to access the application <strong>{app_name}</strong>.</p>
+        <p>Please contact your administrator to request access.</p>
+        <a href="/dashboard" class="btn">Go to Dashboard</a>
+    </div>
+</body>
+</html>"""
+        return HTMLResponse(content=html, status_code=403)
+
+    # Already logged in and authorized — generate response immediately
     request.session["pending_saml_request"] = {
         "request_id":  request_id,
         "issuer":      issuer,
@@ -978,6 +1006,35 @@ async def saml_resume(request: Request):
     issuer      = pending["issuer"]
     acs_url     = pending["acs_url"]
     relay_state = pending.get("relay_state", "")
+
+    # Check authorization
+    if not db.is_user_allowed_app(user["userId"], issuer):
+        print(f"[SAML] Access Denied: User {user['username']} is not assigned to {issuer}")
+        sp = db.get_saml_sp_by_entity_id(issuer)
+        app_name = sp.get("name") if sp else issuer
+        html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>Access Denied</title>
+    <style>
+        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f7fa; color: #333; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
+        .card {{ background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 450px; border-top: 4px solid #e74c3c; }}
+        h1 {{ color: #e74c3c; font-size: 24px; margin-top: 0; }}
+        p {{ font-size: 15px; line-height: 1.6; color: #555; }}
+        .btn {{ display: inline-block; margin-top: 20px; padding: 10px 20px; background-color: #3498db; color: white; text-decoration: none; border-radius: 4px; font-weight: 600; }}
+        .btn:hover {{ background-color: #2980b9; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Access Denied</h1>
+        <p>You are not authorized or assigned to access the application <strong>{app_name}</strong>.</p>
+        <p>Please contact your administrator to request access.</p>
+        <a href="/dashboard" class="btn">Go to Dashboard</a>
+    </div>
+</body>
+</html>"""
+        return HTMLResponse(content=html, status_code=403)
 
     # --- Build signed SAMLResponse ---
     try:

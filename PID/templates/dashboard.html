@@ -120,29 +120,34 @@
         {% if apps %}
         <div class="apps-grid">
             {% for app in apps %}
-            <div class="app-card">
-                {% if app.appId.startswith('app_') %}
-                <span class="badge app-card-badge">Demo</span>
-                {% endif %}
-                
-                <div class="app-card-title">
-                    {% if app.appId == 'app_a' %}App A — Session-based app
-                    {% elif app.appId == 'app_b' %}App B — Session + CSRF app
-                    {% elif app.appId == 'app_c' %}App C — Stateless app (no session)
-                    {% elif app.appId == 'app_d' %}App D — Role-based login app
-                    {% else %}{{ app.appId }}
-                    {% endif %}
-                </div>
-                
-                <div class="app-card-link">
-                    <a href="{{ app.origin }}" target="_blank">{{ app.origin }}</a>
-                </div>
-                
-                <div class="app-card-footer">
-                    <span class="badge" style="background:#f8f9fa; color:#6c757d; border:1px solid #dee2e6;">{{ app.schema_type }}</span>
-                    <a href="{{ app.login_url or (app.origin + '/login') }}" target="_blank" class="btn-open">Open App →</a>
-                </div>
-            </div>
+             <div class="app-card">
+                 {% if app.appId.startswith('app_') %}
+                 <span class="badge app-card-badge">Demo</span>
+                 {% endif %}
+                 
+                 <div class="app-card-title">
+                     {% if app.appId == 'app_a' %}App A — Session-based app
+                     {% elif app.appId == 'app_b' %}App B — Session + CSRF app
+                     {% elif app.appId == 'app_c' %}App C — Stateless app (no session)
+                     {% elif app.appId == 'app_d' %}App D — Role-based login app
+                     {% else %}{{ app.name or app.appId }}
+                     {% endif %}
+                 </div>
+                 
+                 <div class="app-card-link">
+                     <a href="{{ app.origin }}" target="_blank">{{ app.origin }}</a>
+                 </div>
+                 
+                 <div class="app-card-footer">
+                     {% if app.schema_type == 'SAML' %}
+                     <span class="badge" style="background:#e8f8f5; color:#117a65; border:1px solid #a3e4d7;">SAML</span>
+                     <a href="{{ app.origin }}" target="_blank" class="btn-open">Open App →</a>
+                     {% else %}
+                     <span class="badge" style="background:#f8f9fa; color:#6c757d; border:1px solid #dee2e6;">{{ app.schema_type }}</span>
+                     <a href="{{ app.login_url or (app.origin + '/login') }}" target="_blank" class="btn-open">Open App →</a>
+                     {% endif %}
+                 </div>
+             </div>
             {% endfor %}
         </div>
         {% else %}

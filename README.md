@@ -141,29 +141,29 @@ SSO_Non-AD/
 │   ├── icon.png               # Extension icon
 │   └── README.md              # Extension documentation
 │
-├── APP1/                      # Demo: Session-based app (port 3001)
+├── Session based App (App A)/ # Demo: Session-based app (port 3001)
 │   ├── app.js                 # Express server with session auth
 │   ├── users.db               # SQLite user database
 │   └── package.json
 │
-├── APP2/                      # Demo: Session + CSRF app (port 3002)
+├── Session + CSRF App (App B)/# Demo: Session + CSRF app (port 3002)
 │   ├── app.js                 # Express server with CSRF protection
 │   ├── users.db
 │   └── package.json
 │
-├── APP3/                      # Demo: Stateless app (port 3003)
+├── Stateless App (App C)/     # Demo: Stateless app (port 3003)
 │   ├── app.js                 # No session — login on every page load
 │   ├── users.db
 │   └── package.json
 │
-├── APP4/                      # Demo: Role-based login app (port 3004)
+├── Role-based login App (App D)/# Demo: Role-based login app (port 3004)
 │   ├── app.js                 # Login form with role selector
 │   ├── users.db
 │   └── package.json
 │
-│   ├── SAML App (App E)/          # Demo: SAML Service Provider (port 3005)
-│   │   ├── app.js                 # Express server with @node-saml/node-saml
-│   │   └── package.json
+├── SAML App (App E)/          # Demo: SAML Service Provider (port 3005)
+│   ├── app.js                 # Express server with @node-saml/node-saml
+│   └── package.json
 │
 ├── launcher/                  # App launcher UI (port 3100)
 │   └── app.js                 # Simple Express server with navigation links
@@ -387,15 +387,17 @@ Access at: http://localhost:4000/admin (login as `admin` / `admin123`)
 - View all credential mappings
 
 ### Database Tables
-
+ 
 | Table               | Purpose                                                                 |
 | ------------------- | ----------------------------------------------------------------------- |
 | `users`             | Primary Identity user accounts (id, username, password_hash, role)      |
-| `apps`              | Registered apps (appId, origin, login_schema as JSON)                   |
-| `user_apps`         | User ↔ App access control mapping                                       |
+| `apps`              | Registered apps (appId, origin, login_schema: JSON schema or 'SAML')    |
+| `user_apps`         | User ↔ App access control mapping (applies to both Legacy and SAML apps) |
 | `plugin_tokens`     | Extension authentication tokens (token, user_id, scopes, expires_at)    |
 | `vault_credentials` | Per-user per-app credentials (app_username, app_password, extra_fields) |
-| `saml_service_providers` | Registered SAML SPs (entity_id, acs_url, x509cert) |
+| `saml_service_providers` | Registered SAML SP configurations (id, name, entity_id, acs_url, name_id_format, enabled) |
+
+> 💡 **Unified Registry Architecture**: When an administrator registers or registers/configures a SAML Service Provider, the backend automatically seeds/creates a mirroring entry in the `apps` table. This allows standard assignment, permission checking (`db.is_user_allowed_app`), list retrieval, and deletion to happen seamlessly using the unified Application views and controls.
 
 ---
 

@@ -223,7 +223,7 @@
                         <span class="badge" style="position:absolute; top:16px; right:16px; background:#fef5e7; color:#e67e22; font-size:10px;">Demo</span>
                         {% else %}
                         <form method="POST" action="/admin/apps/{{ app.appId }}/delete" style="position:absolute; top:14px; right:14px; margin:0;">
-                            <button type="submit" class="btn-danger" style="padding:3px 8px; font-size:10px;" onclick="return confirm('Delete {{ app.appId }}? This will remove all user assignments for this app.')">Remove</button>
+                            <button type="submit" class="btn-danger" style="padding:3px 8px; font-size:10px;" onclick="return confirm('Delete {{ app.name or app.appId }}? This will remove all user assignments for this app.')">Remove</button>
                         </form>
                         {% endif %}
                         <div style="font-weight:600; font-size:15px; color:#2c3e50; margin-bottom:6px; padding-right:55px;">
@@ -231,14 +231,18 @@
                             {% elif app.appId == 'app_b' %}App B — Session + CSRF app
                             {% elif app.appId == 'app_c' %}App C — Stateless app (no session)
                             {% elif app.appId == 'app_d' %}App D — Role-based login app
-                            {% else %}{{ app.appId }}
+                            {% else %}{{ app.name or app.appId }}
                             {% endif %}
                         </div>
                         <div style="font-size:12px; margin-bottom:10px;">
                             <a href="{{ app.origin }}" target="_blank" style="color:#2980b9;">{{ app.origin }}</a>
                         </div>
                         <div style="display:flex; gap:8px; align-items:center;">
+                            {% if app.schema_type == 'SAML' %}
+                            <span class="badge" style="background:#e8f8f5; color:#117a65; border:1px solid #a3e4d7;">SAML</span>
+                            {% else %}
                             <span class="badge" style="background:#eaf2f8; color:#2980b9;">{{ app.schema_type }}</span>
+                            {% endif %}
                             <span style="font-size:12px; color:#7f8c8d;">{{ app.user_count }} user{{ 's' if app.user_count != 1 else '' }} assigned</span>
                         </div>
                     </div>
@@ -406,7 +410,13 @@
                                 <option value="">-- Select App --</option>
                                 <option value="__all__">All Apps</option>
                                 {% for app in all_apps %}
-                                <option value="{{ app.appId }}">{{ app.appId }} ({{ app.origin }})</option>
+                                <option value="{{ app.appId }}">
+                                    {% if app.schema_type == 'SAML' %}
+                                    {{ app.name }} (SAML)
+                                    {% else %}
+                                    {{ app.appId }} ({{ app.origin }})
+                                    {% endif %}
+                                </option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -437,7 +447,13 @@
                                 <option value="">-- Select App --</option>
                                 <option value="__all__">All Apps</option>
                                 {% for app in all_apps %}
-                                <option value="{{ app.appId }}">{{ app.appId }} ({{ app.origin }})</option>
+                                <option value="{{ app.appId }}">
+                                    {% if app.schema_type == 'SAML' %}
+                                    {{ app.name }} (SAML)
+                                    {% else %}
+                                    {{ app.appId }} ({{ app.origin }})
+                                    {% endif %}
+                                </option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -490,11 +506,6 @@
                                 <button type="button" class="btn-primary"
                                     onclick="openSamlEdit({{ sp.id }}, '{{ sp.name|e }}', '{{ sp.entity_id|e }}', '{{ sp.acs_url|e }}', '{{ (sp.name_id_format or '')|e }}', {{ 1 if sp.enabled else 0 }})"
                                 >Edit</button>
-                                <form method="POST" action="/admin/saml-sps/{{ sp.id }}/delete" style="display:inline;">
-                                    <button type="submit" class="btn-danger"
-                                        onclick="return confirm('Permanently delete SAML SP &quot;{{ sp.name|e }}&quot;?\nThis action cannot be undone.')"
-                                    >Delete</button>
-                                </form>
                             </td>
                         </tr>
                         {% endfor %}
