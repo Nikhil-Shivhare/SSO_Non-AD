@@ -74,6 +74,12 @@ const saml = new SAML({
   requestIdExpirationPeriodMs:   5 * 60 * 1000,   // 5 minutes
   acceptedClockSkewMs:           2 * 60 * 1000,   // 2 minutes
 
+  // Signing: PID IdP signs the Assertion element (not the Response envelope)
+  // wantAuthnResponseSigned must be false so node-saml falls through to
+  // assertion-level signature verification instead of throwing on the Response
+  wantAuthnResponseSigned: false,
+  wantAssertionsSigned:    true,
+
   // We do not sign AuthnRequests in this MVP
   authnRequestBinding: 'HTTP-Redirect',
 });

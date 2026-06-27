@@ -303,11 +303,17 @@ def build_saml_response(
     _add_attr("email",    email)
 
     # -----------------------------------------------------------------------
-    # 3. Sign the Assertion element directly (enveloped signature)
+    # 3. Sign the Assertion element directly (Signature placed INSIDE Assertion)
     #
-    # signxml requires that the signed element IS the element passed to .sign()
-    # (or its root). We therefore sign the Assertion separately, then
-    # re-build the full Response around the signed Assertion.
+    # node-saml's getVerifiedXml enforces:
+    #   signature.parentNode === the element referenced by URI
+    # Therefore <ds:Signature> must be a direct child of <saml:Assertion>,
+    # and the reference URI must be "#assertion_id".
+    #
+    # Procedure:
+    #   a) Detach assertion from response (it's still in memory)
+    #   b) Sign the assertion standalone — signxml inserts Signature inside it
+    #   c) Re-attach the signed assertion into the response
     # -----------------------------------------------------------------------
     key_pem  = load_key_pem()
     cert_pem = load_cert_pem()
@@ -319,7 +325,11 @@ def build_saml_response(
         c14n_algorithm="http://www.w3.org/2001/10/xml-exc-c14n#",
     )
 
-    # Sign the Assertion element (signxml inserts Signature inside Assertion)
+    # Remove assertion from response so signxml sees it as the root
+    response.remove(assertion)
+
+    # Sign the assertion (standalone root); signxml inserts <ds:Signature>
+    # as first child after <saml:Issuer> per the enveloped signature method
     signed_assertion = signer.sign(
         assertion,
         key=key_pem,
@@ -327,8 +337,8 @@ def build_saml_response(
         reference_uri=f"#{assertion_id}",
     )
 
-    # Replace the unsigned assertion in the Response with the signed one
-    response.remove(assertion)
+    # Re-insert signed assertion into the response at the correct position
+    # (after Status, i.e. as 3rd child: Issuer, Status, Assertion)
     response.append(signed_assertion)
 
     return etree.tostring(response, xml_declaration=True, encoding="UTF-8")

@@ -315,7 +315,219 @@ pkill -f "node.*primary-identity"
 cd vault-service && docker-compose down && cd ..
 ```
 
+---
 
+## 11. SAML Federated SSO Tests (App E)
+
+SAML SSO adds a second authentication category alongside credential replay.
+PID acts as SAML 2.0 Identity Provider. App E (port 3005) is the Service Provider.
+
+### Ports & Endpoints
+
+| Service | URL | Role |
+|---|---|---|
+| PID Identity Provider | `http://localhost:4000` | Issues signed SAML assertions |
+| App E Service Provider | `http://localhost:3005` | Consumes and validates SAML assertions |
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `http://localhost:4000/saml/metadata` | GET | PID IdP metadata XML |
+| `http://localhost:4000/saml/sso` | GET | Receives AuthnRequest from App E |
+| `http://localhost:4000/saml/resume` | GET | Issues SAMLResponse after PID login |
+| `http://localhost:3005/saml/metadata` | GET | App E SP metadata XML |
+| `http://localhost:3005/saml/login` | GET | Generates AuthnRequest, redirects to PID |
+| `http://localhost:3005/saml/acs` | POST | Receives and validates SAMLResponse |
+| `http://localhost:3005/dashboard` | GET | Protected; shows SAML assertion attributes |
+
+### 11.1 Metadata Health Checks
+
+```bash
+# IdP metadata (PID) — should contain signing certificate and SSO URL
+curl -s http://localhost:4000/saml/metadata | grep -E "EntityDescriptor|SingleSignOnService|X509Certificate" | head -5
+
+# SP metadata (App E) — should contain entity ID and ACS URL
+curl -s http://localhost:3005/saml/metadata | grep -E "EntityDescriptor|AssertionConsumerService" | head -5
+```
+
+**Expected:** Both return valid XML with `200 OK`.
+
+### 11.2 Test Case: First-Time Login Flow
+
+User has no existing PID session. Complete SP-initiated SSO flow.
+
+```bash
+rm -f /tmp/saml_cookies.txt
+
+# Step 1: App E generates AuthnRequest → redirects to PID
+SAML_URL=$(curl -s -c /tmp/saml_cookies.txt -b /tmp/saml_cookies.txt \
+  -w "%{redirect_url}" -o /dev/null \
+  "http://localhost:3005/saml/login")
+echo "SAMLRequest URL: ${SAML_URL:0:80}..."
+# Expected: URL contains SAMLRequest= parameter
+
+# Step 2: Browser hits PID /saml/sso (stores pending SAML → redirects to /login)
+curl -s -c /tmp/saml_cookies.txt -b /tmp/saml_cookies.txt \
+  -w "PID SSO: %{http_code}\n" -o /dev/null "$SAML_URL"
+# Expected: 302
+
+# Step 3: Login to PID → should redirect to /saml/resume (not /dashboard)
+LOGIN_LOC=$(curl -s -D - -b /tmp/saml_cookies.txt -c /tmp/saml_cookies.txt \
+  -X POST http://localhost:4000/login \
+  -d "username=testuser&password=TestPass123!" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -o /dev/null | grep -i "^location:" | tr -d '\r' | sed 's/location: //I')
+echo "Login redirect: $LOGIN_LOC"
+# Expected: /saml/resume
+
+# Step 4: /saml/resume returns auto-post HTML with SAMLResponse
+SAML_B64=$(curl -s -b /tmp/saml_cookies.txt "http://localhost:4000/saml/resume" | \
+  python3 -c "import sys,re; m=re.search(r'name=\"SAMLResponse\" value=\"([^\"]+)\"',sys.stdin.read()); print(m.group(1) if m else '')")
+echo "SAMLResponse: ${#SAML_B64} chars"
+# Expected: > 1000 chars
+
+# Step 5: POST SAMLResponse to App E ACS
+ACS_LOC=$(curl -s -D - -b /tmp/saml_cookies.txt -c /tmp/saml_cookies.txt \
+  -X POST http://localhost:3005/saml/acs \
+  --data-urlencode "SAMLResponse=$SAML_B64" \
+  -o /tmp/acs_out.txt | grep -i "^location:" | tr -d '\r' | sed 's/location: //I')
+echo "ACS redirect: $ACS_LOC"
+# Expected: /dashboard
+
+# Step 6: Access dashboard
+curl -s -b /tmp/saml_cookies.txt http://localhost:3005/dashboard | \
+  grep -o "Authenticated via SAML\|testuser" | head -3
+# Expected: "Authenticated via SAML" and "testuser"
+```
+
+**Pass criteria:**
+- Login redirects to `/saml/resume` (not `/dashboard`)
+- ACS redirects to `/dashboard`
+- Dashboard returns 200 and shows `testuser`
+
+### 11.3 Test Case: SSO Flow (No Re-Login)
+
+User already has a PID session. App E login should skip the password prompt.
+
+```bash
+# Logout from App E only (PID session stays alive)
+curl -s -b /tmp/saml_cookies.txt -c /tmp/saml_cookies.txt \
+  -w "App E logout: %{http_code}\n" -o /dev/null \
+  "http://localhost:3005/logout"
+
+# Start SAML flow again — PID should auto-resume without login page
+SAML_URL2=$(curl -s -c /tmp/saml_cookies.txt -b /tmp/saml_cookies.txt \
+  -w "%{redirect_url}" -o /dev/null "http://localhost:3005/saml/login")
+
+SSO_LOC=$(curl -s -D - -b /tmp/saml_cookies.txt -c /tmp/saml_cookies.txt \
+  -o /dev/null "$SAML_URL2" | grep -i "^location:" | tr -d '\r' | sed 's/location: //I')
+echo "PID SSO redirect: $SSO_LOC"
+# Expected: /saml/resume (NOT /login — no password prompt)
+
+SAML_B64_2=$(curl -s -b /tmp/saml_cookies.txt "http://localhost:4000/saml/resume" | \
+  python3 -c "import sys,re; m=re.search(r'name=\"SAMLResponse\" value=\"([^\"]+)\"',sys.stdin.read()); print(m.group(1) if m else '')")
+ACS_LOC2=$(curl -s -D - -b /tmp/saml_cookies.txt -c /tmp/saml_cookies.txt \
+  -X POST http://localhost:3005/saml/acs \
+  --data-urlencode "SAMLResponse=$SAML_B64_2" \
+  -o /dev/null | grep -i "^location:" | tr -d '\r' | sed 's/location: //I')
+echo "ACS redirect: $ACS_LOC2"
+# Expected: /dashboard (reached without entering password)
+```
+
+**Pass criteria:** PID `/saml/sso` redirects to `/saml/resume` (not `/login`) → ACS → `/dashboard`.
+
+### 11.4 Test Case: Security — Invalid SAMLResponse Rejected
+
+```bash
+# Tampered/garbage SAMLResponse must be rejected with 401
+FAKE_RESPONSE=$(echo "this is not valid saml" | base64)
+ACS_STATUS=$(curl -s -w "%{http_code}" -o /dev/null \
+  -X POST http://localhost:3005/saml/acs \
+  --data-urlencode "SAMLResponse=$FAKE_RESPONSE")
+echo "Tampered response status: $ACS_STATUS"
+# Expected: 401
+```
+
+### 11.5 Test Case: Security — Expired SAMLResponse Rejected
+
+An expired SAMLResponse (TTL past `NotOnOrAfter`) is rejected automatically by node-saml.
+The assertion TTL is 5 minutes with 2-minute clock skew tolerance (configured in `app.js`).
+
+To test manually: capture a valid SAMLResponse, wait >7 minutes, replay it.
+**Expected:** node-saml rejects with `"SAML assertion has expired."` and returns 401.
+
+### 11.6 Test Case: Regression — Existing System Unaffected
+
+```bash
+# PID login page still works
+curl -s -o /dev/null -w "PID login: %{http_code}\n" http://localhost:4000/login
+
+# Apps A–D still respond
+for PORT in 3001 3002 3003 3004; do
+  curl -s -o /dev/null -w "App on port $PORT: %{http_code}\n" --connect-timeout 2 \
+    "http://localhost:$PORT/login"
+done
+
+# PID session API still works
+curl -s http://localhost:4000/api/session/status
+# Expected: {"authenticated":false} or authenticated if cookie present
+```
+
+**Pass criteria:** All Apps A–D return 200. PID API responds correctly.
+
+### 11.7 SAML Database Check
+
+```bash
+cd PID
+sqlite3 database.sqlite
+```
+
+Inside SQLite:
+```sql
+-- Verify SAML SP table exists and App E is registered
+SELECT id, name, entity_id, acs_url, enabled FROM saml_service_providers;
+-- Expected: App E SAML Demo | http://localhost:3005/saml/metadata | http://localhost:3005/saml/acs | 1
+
+-- All tables (should now include saml_service_providers)
+.tables
+```
+
+### 11.8 Quick Reference — Start SAML Services
+
+```bash
+cd /path/to/SSO_Non-AD
+
+# Kill any stale processes
+lsof -ti:4000 | xargs kill -9 2>/dev/null
+lsof -ti:3005 | xargs kill -9 2>/dev/null
+sleep 2
+
+# Start PID (Identity Provider)
+(cd PID && source venv/bin/activate && python app.py > /tmp/pid.log 2>&1 &)
+
+# Start App E (Service Provider)
+(cd "SAML App (App E)" && node app.js > /tmp/appe.log 2>&1 &)
+
+sleep 5
+echo "PID:   $(curl -s -o /dev/null -w '%{http_code}' http://localhost:4000/saml/metadata)"
+echo "App E: $(curl -s -o /dev/null -w '%{http_code}' http://localhost:3005/saml/metadata)"
+```
+
+Or use the project script: `./start-all.sh` / `./stop-all.sh`
+
+### 11.9 Test Results Log
+
+| Test Case | Status | Date |
+|---|---|---|
+| PID IdP metadata (`GET /saml/metadata`) | ✅ PASS | 2026-06-27 |
+| App E SP metadata (`GET /saml/metadata`) | ✅ PASS | 2026-06-27 |
+| First-time login flow (E2E curl) | ✅ PASS | 2026-06-27 |
+| SSO flow — no re-login (E2E curl) | ✅ PASS | 2026-06-27 |
+| Invalid SAMLResponse rejected (401) | ✅ PASS | 2026-06-27 |
+| PID dashboard regression | ✅ PASS | 2026-06-27 |
+| Apps A–D regression (ports 3001–3004) | ✅ PASS | 2026-06-27 |
+| SAML SP table in SQLite | ✅ PASS | 2026-06-27 |
+
+---
 
 
 
