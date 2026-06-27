@@ -17,9 +17,10 @@ SECURITY NOTES (PoC only):
 import json
 import os
 import urllib.parse
+import base64
 
 from fastapi import FastAPI, Request, Form, Depends, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from slowapi import Limiter
@@ -28,6 +29,7 @@ from slowapi.errors import RateLimitExceeded
 
 import database as db
 import vault_client
+import saml_idp
 
 # ============================================================================
 # APP SETUP
@@ -140,6 +142,7 @@ def update_extension_manifest(origin: str, action: str = "add") -> bool:
 async def startup():
     """Initialize the database and check Vault health on startup."""
     db.init_database()
+    db.seed_saml_sp_if_missing()  # Ensure App E SAML SP is registered
 
     # Check Vault Service health (warn-only, don't crash PID)
     vault_healthy = await vault_client.health_check()
@@ -252,10 +255,21 @@ async def login_submit(request: Request, username: str = Form(...), password: st
             "request": request, "title": "Login", "error": "Your account has been deactivated. Contact an administrator."
         })
 
-    # Create session
-    request.session["userId"] = user["id"]
+    # Capture pending SAML state BEFORE clearing/rebuilding session
+    # (Starlette signed-cookie sessions: must capture before session.clear())
+    pending_saml = request.session.get("pending_saml_request")
+
+    # Create session (clear first to prevent session fixation)
+    request.session.clear()
+    request.session["userId"]   = user["id"]
     request.session["username"] = user["username"]
-    request.session["role"] = user["role"]
+    request.session["role"]     = user["role"]
+
+    # Restore pending SAML state into the fresh authenticated session
+    if pending_saml:
+        request.session["pending_saml_request"] = pending_saml
+        print(f"[SAML] Post-login: pending SAML request found, resuming for {user['username']}")
+        return RedirectResponse(url="/saml/resume", status_code=302)
 
     print(f"[AUTH] User logged in: {user['username']} ({user['role']})")
     return RedirectResponse(url="/dashboard", status_code=302)
@@ -779,3 +793,142 @@ async def api_vault_update_password(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=4000)
+
+
+# ============================================================================
+# SAML IDENTITY PROVIDER ROUTES
+# ============================================================================
+
+SAML_IDP_ENTITY_ID = os.getenv("SAML_IDP_ENTITY_ID", "http://localhost:4000/saml/metadata")
+SAML_IDP_SSO_URL   = os.getenv("SAML_IDP_SSO_URL",   "http://localhost:4000/saml/sso")
+
+
+@app.get("/saml/metadata", response_class=Response)
+async def saml_idp_metadata():
+    """Return PID IdP metadata XML."""
+    cert_body = saml_idp.load_cert_body()
+    xml = saml_idp.build_idp_metadata_xml(
+        idp_entity_id=SAML_IDP_ENTITY_ID,
+        sso_url=SAML_IDP_SSO_URL,
+        cert_body=cert_body,
+    )
+    return Response(content=xml, media_type="application/xml")
+
+
+@app.get("/saml/sso", response_class=HTMLResponse)
+async def saml_sso(request: Request, SAMLRequest: str = "", RelayState: str = ""):
+    """
+    Receive SAML AuthnRequest via HTTP-Redirect binding.
+
+    Steps:
+    1. Decode Redirect-binding SAMLRequest (base64 + raw DEFLATE).
+    2. Parse request XML — extract request_id, issuer, acs_url.
+    3. Validate issuer (SP entity ID) against saml_service_providers table.
+    4. Validate ACS URL matches DB value (prevent ACS injection).
+    5a. If user is not logged in → store pending SAML state and redirect to /login.
+    5b. If user is logged in → proceed directly to /saml/resume.
+    """
+    if not SAMLRequest:
+        return HTMLResponse("<h1>400 Bad Request</h1><p>Missing SAMLRequest parameter.</p>", status_code=400)
+
+    # --- Decode & parse ---
+    try:
+        xml_bytes = saml_idp.decode_redirect_saml_request(SAMLRequest)
+        parsed    = saml_idp.parse_authn_request(xml_bytes)
+    except ValueError as exc:
+        print(f"[SAML] Invalid SAMLRequest: {exc}")
+        return HTMLResponse(f"<h1>400 Invalid SAMLRequest</h1><p>{exc}</p>", status_code=400)
+
+    request_id = parsed["request_id"]
+    issuer     = parsed["issuer"]
+    # ACS URL from the request itself is advisory; we always look it up from DB.
+
+    # --- Validate SP entity ID ---
+    sp = db.get_saml_sp_by_entity_id(issuer)
+    if not sp:
+        print(f"[SAML] Unknown or disabled SP: {issuer}")
+        return HTMLResponse(
+            f"<h1>403 Forbidden</h1><p>Unknown Service Provider: {issuer}</p>",
+            status_code=403,
+        )
+
+    # ACS URL always comes from the DB (not the request) to prevent injection
+    acs_url = sp["acs_url"]
+
+    print(f"[SAML] AuthnRequest from SP={issuer}, request_id={request_id}, acs_url={acs_url}")
+
+    # --- Check if user is already logged in ---
+    user = get_session_user(request)
+
+    if not user:
+        # Store pending SAML data and redirect to login
+        request.session["pending_saml_request"] = {
+            "request_id":  request_id,
+            "issuer":      issuer,
+            "acs_url":     acs_url,
+            "relay_state": RelayState,
+        }
+        print(f"[SAML] User not authenticated — storing pending SAML and redirecting to /login")
+        return RedirectResponse(url="/login", status_code=302)
+
+    # Already logged in — generate response immediately
+    request.session["pending_saml_request"] = {
+        "request_id":  request_id,
+        "issuer":      issuer,
+        "acs_url":     acs_url,
+        "relay_state": RelayState,
+    }
+    return RedirectResponse(url="/saml/resume", status_code=302)
+
+
+@app.get("/saml/resume", response_class=HTMLResponse)
+async def saml_resume(request: Request):
+    """
+    Resume a pending SAML flow after successful PID login.
+
+    Reads pending_saml_request from session, generates a signed SAMLResponse,
+    and returns an auto-posting HTML form targeting the SP ACS URL.
+    """
+    user = get_session_user(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+
+    pending = request.session.get("pending_saml_request")
+    if not pending:
+        print("[SAML] /saml/resume called with no pending SAML request — redirecting to dashboard")
+        return RedirectResponse(url="/dashboard", status_code=302)
+
+    request_id  = pending["request_id"]
+    issuer      = pending["issuer"]
+    acs_url     = pending["acs_url"]
+    relay_state = pending.get("relay_state", "")
+
+    # --- Build signed SAMLResponse ---
+    try:
+        saml_response_bytes = saml_idp.build_saml_response(
+            sp_entity_id=issuer,
+            sp_acs_url=acs_url,
+            name_id=user["username"],
+            request_id=request_id,
+            role=user.get("role", "user"),
+            idp_entity_id=SAML_IDP_ENTITY_ID,
+        )
+    except Exception as exc:
+        print(f"[SAML] Error building SAMLResponse: {exc}")
+        return HTMLResponse(
+            f"<h1>500 SAML Error</h1><p>Failed to generate SAML assertion: {exc}</p>",
+            status_code=500,
+        )
+
+    # Clear pending SAML state ONLY after successful response generation
+    del request.session["pending_saml_request"]
+
+    saml_response_b64 = base64.b64encode(saml_response_bytes).decode("utf-8")
+    print(f"[SAML] Issuing SAMLResponse to {acs_url} for user={user['username']} (InResponseTo={request_id})")
+
+    html = saml_idp.render_auto_post_form(
+        acs_url=acs_url,
+        saml_response_b64=saml_response_b64,
+        relay_state=relay_state,
+    )
+    return HTMLResponse(content=html)

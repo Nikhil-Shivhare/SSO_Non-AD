@@ -98,9 +98,11 @@ app.get('/', (req, res) => {
         </div>
     </div>
     
+    </div>
+
     <div class="note">
-        <strong>Note:</strong> This is a simple navigation launcher. All apps run independently on localhost.
-        Future SSO integration will be handled by a browser extension and Keycloak identity provider.
+        <strong>Credential Replay SSO (Apps A-D):</strong> Chrome extension + PID vault replays credentials to legacy apps that cannot be modified.<br><br>
+        <strong>SAML Federated SSO (App E):</strong> PID acts as SAML 2.0 Identity Provider. App E is a Service Provider that trusts signed PID assertions &mdash; no password prompt in App E after PID login.
     </div>
 </body>
 </html>

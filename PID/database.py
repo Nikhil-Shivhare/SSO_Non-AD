@@ -92,6 +92,18 @@ def init_database():
             require_special INTEGER DEFAULT 1,
             special_chars TEXT DEFAULT '!@#$%%^&*()_+-=[]{}|;:,.<>?'
         );
+
+        -- SAML Service Provider registry (separate from credential-replay 'apps' table)
+        CREATE TABLE IF NOT EXISTS saml_service_providers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entity_id TEXT UNIQUE NOT NULL,
+            acs_url TEXT NOT NULL,
+            name TEXT NOT NULL,
+            enabled INTEGER DEFAULT 1,
+            name_id_format TEXT DEFAULT 'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
+            created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+            updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+        );
     """)
 
     # Seed password policy defaults if not present
@@ -735,3 +747,58 @@ def get_active_sessions() -> list:
             "scopes": r["scopes"],
         })
     return sessions
+
+
+# --------------------------------------------------------------------------
+# SAML SERVICE PROVIDER FUNCTIONS
+# --------------------------------------------------------------------------
+
+def get_saml_sp_by_entity_id(entity_id: str) -> dict | None:
+    """Retrieve a SAML Service Provider record by its entity ID."""
+    conn = _get_db()
+    row = conn.execute(
+        "SELECT * FROM saml_service_providers WHERE entity_id = ? AND enabled = 1",
+        (entity_id,),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_enabled_saml_sps() -> list[dict]:
+    """Return all enabled SAML Service Provider records."""
+    conn = _get_db()
+    rows = conn.execute(
+        "SELECT * FROM saml_service_providers WHERE enabled = 1 ORDER BY name"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def seed_saml_sp_if_missing():
+    """Seed App E SP row if not already present (idempotent)."""
+    conn = _get_db()
+    existing = conn.execute(
+        "SELECT id FROM saml_service_providers WHERE entity_id = ?",
+        ("http://localhost:3005/saml/metadata",),
+    ).fetchone()
+    if not existing:
+        now = int(time.time())
+        conn.execute(
+            """
+            INSERT INTO saml_service_providers
+                (entity_id, acs_url, name, enabled, created_at, updated_at)
+            VALUES (?, ?, ?, 1, ?, ?)
+            """,
+            (
+                "http://localhost:3005/saml/metadata",
+                "http://localhost:3005/saml/acs",
+                "App E SAML Demo",
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        print("[DB] Seeded App E SAML Service Provider")
+    else:
+        print("[DB] SAML SP for App E already exists")
+    conn.close()
