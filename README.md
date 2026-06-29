@@ -124,12 +124,15 @@ SSO_Non-AD/
 │   ├── database.py                # SQLite setup, queries, password policy
 │   ├── vault_client.py            # Async Vault HTTP proxy client
 │   ├── saml_idp.py                # SAML 2.0 Identity Provider implementation
+│   ├── certs/                     # SAML signing certificate and key
+│   │   ├── dev-idp.crt            # Public certificate (embedded in IdP metadata)
+│   │   └── dev-idp.key            # Private key (used to sign assertions)
 │   ├── database.sqlite            # Auto-generated database file
 │   ├── templates/                 # Jinja2 HTML templates
 │   │   ├── base.html              # Shared layout
 │   │   ├── login.html             # Login page
 │   │   ├── dashboard.html         # User dashboard
-│   │   └── admin.html             # Admin panel (users, apps, password policy)
+│   │   └── admin.html             # Admin panel (users, apps, password policy, SAML SPs)
 │   ├── venv/                      # Python virtual environment
 │   └── requirements.txt           # Python dependencies
 │
@@ -163,7 +166,8 @@ SSO_Non-AD/
 │
 ├── SAML App (App E)/          # Demo: SAML Service Provider (port 3005)
 │   ├── app.js                 # Express server with @node-saml/node-saml
-│   └── package.json
+│   ├── package.json
+│   └── README.md              # App E documentation
 │
 ├── launcher/                  # App launcher UI (port 3100)
 │   └── app.js                 # Simple Express server with navigation links
@@ -191,6 +195,8 @@ SSO_Non-AD/
 | Language (PID)    | **Python**                        |
 | Language (Apps)   | JavaScript (Node.js)              |
 | CSRF Protection   | csurf (App-B)                     |
+| SAML IdP (PID)    | signxml + lxml (assertion signing) |
+| SAML SP (App E)   | @node-saml/node-saml + express-session |
 
 ---
 
@@ -248,12 +254,22 @@ This starts all 8 services:
 
 ### 4. Test the Flow
 
+#### Credential Replay SSO (Apps A-D)
+
 1. **Login to Primary Identity**: http://localhost:4000/login
    - Username: `testuser` | Password: `TestPass123!`
 2. **Open Launcher**: http://localhost:3100
 3. **Click any app** (e.g., App-A)
 4. **First time**: Extension enters Learning Mode → Login manually → Save credentials
 5. **Next time**: Extension auto-fills and logs in **silently** ✅
+
+#### SAML Federated SSO (App E)
+
+1. **Open App E directly**: http://localhost:3005/login
+2. Click **"Login with PID SAML SSO"**
+3. If not logged into PID, you will be redirected to PID login (`testuser` / `TestPass123!`)
+4. After PID login, you are automatically redirected back to App E dashboard
+5. You are logged into App E without ever entering a password in App E ✅
 
 ### Stop All Services
 
@@ -386,19 +402,18 @@ Access at: http://localhost:4000/admin (login as `admin` / `admin123`)
 - Register / manage applications
 - Assign apps to users
 - View all credential mappings
+- **Register and manage SAML Service Providers** (SAML Apps tab)
 
 ### Database Tables
  
 | Table               | Purpose                                                                 |
 | ------------------- | ----------------------------------------------------------------------- |
 | `users`             | Primary Identity user accounts (id, username, password_hash, role)      |
-| `apps`              | Registered apps (appId, origin, login_schema: JSON schema or 'SAML')    |
-| `user_apps`         | User ↔ App access control mapping (applies to both Legacy and SAML apps) |
+| `apps`              | Registered apps (appId, origin, login_schema: JSON schema) |
+| `user_apps`         | User ↔ App access control mapping |
 | `plugin_tokens`     | Extension authentication tokens (token, user_id, scopes, expires_at)    |
 | `vault_credentials` | Per-user per-app credentials (app_username, app_password, extra_fields) |
 | `saml_service_providers` | Registered SAML SP configurations (id, name, entity_id, acs_url, name_id_format, enabled) |
-
-> 💡 **Unified Registry Architecture**: When an administrator registers or registers/configures a SAML Service Provider, the backend automatically seeds/creates a mirroring entry in the `apps` table. This allows standard assignment, permission checking (`db.is_user_allowed_app`), list retrieval, and deletion to happen seamlessly using the unified Application views and controls.
 
 ---
 
