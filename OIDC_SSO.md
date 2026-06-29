@@ -277,7 +277,7 @@ Minimum App F OIDC configuration:
 > then use `client_secret` directly as the HMAC verify key.
 
 ```javascript
-const { Issuer, generators } = require("openid-client");  // v4 API — requires openid-client@4
+const { Issuer, generators } = require("openid-client"); // v4 API — requires openid-client@4
 
 // For HS256 MVP: omit jwks_uri — App F verifies tokens using client_secret as the HMAC key
 const issuer = new Issuer({
@@ -295,10 +295,10 @@ const issuer = new Issuer({
 
 const client = new issuer.Client({
   client_id: "app_f",
-  client_secret: "app_f_secret_development_only",  // used as HS256 HMAC verify key
+  client_secret: "app_f_secret_development_only", // used as HS256 HMAC verify key
   redirect_uris: ["http://localhost:3006/callback"],
   response_types: ["code"],
-  id_token_signed_response_alg: "HS256",  // tells openid-client to expect HS256 tokens
+  id_token_signed_response_alg: "HS256", // tells openid-client to expect HS256 tokens
 });
 ```
 
@@ -310,23 +310,23 @@ default — PID must store and echo it back in the ID Token (see §11 DB schema)
 
 ## 8. OIDC Concepts Used In MVP
 
-| OIDC Concept | Meaning In This Project |
-| --- | --- |
-| Provider (OP) | PID |
-| Client / Relying Party (RP) | App F |
-| Authorization Endpoint | `http://localhost:4000/authorize` |
-| Token Endpoint | `http://localhost:4000/token` |
-| UserInfo Endpoint | `http://localhost:4000/userinfo` |
-| JWKS Endpoint | `http://localhost:4000/.well-known/jwks.json` |
-| Discovery Document | `http://localhost:4000/.well-known/openid-configuration` |
-| ID Token | JWT issued by PID identifying the user |
-| Access Token | Token App F can use to call UserInfo (not strictly required in MVP but issued) |
-| Authorization Code | Short-lived code exchanged for tokens |
-| Client ID | `app_f` (identifies App F to PID) |
-| Client Secret | Shared secret between PID and App F |
-| Redirect URI | `http://localhost:3006/callback` (where PID sends the code) |
-| Scope | `openid profile email` |
-| Subject (`sub`) | Unique user identifier (username or user ID) |
+| OIDC Concept                | Meaning In This Project                                                        |
+| --------------------------- | ------------------------------------------------------------------------------ |
+| Provider (OP)               | PID                                                                            |
+| Client / Relying Party (RP) | App F                                                                          |
+| Authorization Endpoint      | `http://localhost:4000/authorize`                                              |
+| Token Endpoint              | `http://localhost:4000/token`                                                  |
+| UserInfo Endpoint           | `http://localhost:4000/userinfo`                                               |
+| JWKS Endpoint               | `http://localhost:4000/.well-known/jwks.json`                                  |
+| Discovery Document          | `http://localhost:4000/.well-known/openid-configuration`                       |
+| ID Token                    | JWT issued by PID identifying the user                                         |
+| Access Token                | Token App F can use to call UserInfo (not strictly required in MVP but issued) |
+| Authorization Code          | Short-lived code exchanged for tokens                                          |
+| Client ID                   | `app_f` (identifies App F to PID)                                              |
+| Client Secret               | Shared secret between PID and App F                                            |
+| Redirect URI                | `http://localhost:3006/callback` (where PID sends the code)                    |
+| Scope                       | `openid profile email`                                                         |
+| Subject (`sub`)             | Unique user identifier (username or user ID)                                   |
 
 ---
 
@@ -415,14 +415,14 @@ Responsibilities:
 
 Required query parameters (MVP minimum):
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `response_type` | Yes | Must be `code` |
-| `client_id` | Yes | Must match a registered OIDC client |
-| `redirect_uri` | Yes | Must exactly match registered URI |
-| `scope` | Yes | Must include `openid` |
-| `state` | Recommended | Opaque value returned unchanged |
-| `nonce` | Recommended | Random value; must be stored with the code and echoed in ID Token |
+| Parameter       | Required    | Description                                                       |
+| --------------- | ----------- | ----------------------------------------------------------------- |
+| `response_type` | Yes         | Must be `code`                                                    |
+| `client_id`     | Yes         | Must match a registered OIDC client                               |
+| `redirect_uri`  | Yes         | Must exactly match registered URI                                 |
+| `scope`         | Yes         | Must include `openid`                                             |
+| `state`         | Recommended | Opaque value returned unchanged                                   |
+| `nonce`         | Recommended | Random value; must be stored with the code and echoed in ID Token |
 
 ### `POST /token`
 
@@ -450,20 +450,20 @@ Responsibilities:
 
 ID Token claims (minimum):
 
-| Claim | Value | Notes |
-| --- | --- | --- |
-| `iss` | `http://localhost:4000` | Issuer |
-| `sub` | username or user ID | Subject |
-| `aud` | client_id (app_f) | Audience |
-| `exp` | current time + TTL | Expiration |
-| `iat` | current time | Issued at |
-| `iss` | `http://localhost:4000` | Issuer |
+| Claim | Value                   | Notes      |
+| ----- | ----------------------- | ---------- |
+| `iss` | `http://localhost:4000` | Issuer     |
+| `sub` | username or user ID     | Subject    |
+| `aud` | client_id (app_f)       | Audience   |
+| `exp` | current time + TTL      | Expiration |
+| `iat` | current time            | Issued at  |
+| `iss` | `http://localhost:4000` | Issuer     |
 
 With `scope=profile email`:
 
-| Claim | Value | Notes |
-| --- | --- | --- |
-| `name` | username | Profile scope |
+| Claim   | Value                  | Notes                           |
+| ------- | ---------------------- | ------------------------------- |
+| `name`  | username               | Profile scope                   |
 | `email` | username@example.local | Email scope (synthetic for MVP) |
 
 ### `GET /userinfo`
@@ -658,11 +658,13 @@ For MVP, HS256 (HMAC-SHA256) is acceptable as a starting point. The secret shoul
 ### `GET /`
 
 If logged in:
+
 ```text
 redirect /dashboard
 ```
 
 If not logged in:
+
 ```text
 redirect /login
 ```
@@ -670,6 +672,7 @@ redirect /login
 ### `GET /login`
 
 Shows a page with one button:
+
 ```text
 Login with PID OIDC SSO
 ```
@@ -1109,21 +1112,21 @@ Regression testing, docs, launcher/script integration.
 
 ## 21. Protocol Comparison Reference
 
-| Aspect | SAML (Existing) | OIDC (New) |
-| --- | --- | --- |
-| Message format | XML | JSON / JWT |
-| Primary token | Signed XML Assertion | Signed JWT (ID Token) |
-| Flow type | Redirect + auto-POST form | Redirect + background token POST |
-| User presence at SP | Not required | Not required |
-| Token format | XML (SOAP-ish) | JWT (compact, URL-safe) |
-| Mobile friendly | Difficult | Natural |
-| Complexity | High (many bindings, profiles) | Lower (fewer flows, JSON-based) |
-| Industry adoption | Enterprise (legacy) | Modern SaaS, mobile, SPAs |
-| Session hook in PID | /saml/* | /authorize, /token |
-| Database table | saml_service_providers | oidc_clients |
-| Demo app | App E (port 3005, Node + @node-saml/node-saml) | App F (port 3006, Node + openid-client) |
-| Signing library (PID) | signxml + lxml | pyjwt + cryptography |
-| Token validation (App) | @node-saml/node-saml built-in | openid-client built-in |
+| Aspect                 | SAML (Existing)                                | OIDC (New)                              |
+| ---------------------- | ---------------------------------------------- | --------------------------------------- |
+| Message format         | XML                                            | JSON / JWT                              |
+| Primary token          | Signed XML Assertion                           | Signed JWT (ID Token)                   |
+| Flow type              | Redirect + auto-POST form                      | Redirect + background token POST        |
+| User presence at SP    | Not required                                   | Not required                            |
+| Token format           | XML (SOAP-ish)                                 | JWT (compact, URL-safe)                 |
+| Mobile friendly        | Difficult                                      | Natural                                 |
+| Complexity             | High (many bindings, profiles)                 | Lower (fewer flows, JSON-based)         |
+| Industry adoption      | Enterprise (legacy)                            | Modern SaaS, mobile, SPAs               |
+| Session hook in PID    | /saml/\*                                       | /authorize, /token                      |
+| Database table         | saml_service_providers                         | oidc_clients                            |
+| Demo app               | App E (port 3005, Node + @node-saml/node-saml) | App F (port 3006, Node + openid-client) |
+| Signing library (PID)  | signxml + lxml                                 | pyjwt + cryptography                    |
+| Token validation (App) | @node-saml/node-saml built-in                  | openid-client built-in                  |
 
 ---
 
