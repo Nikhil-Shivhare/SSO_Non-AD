@@ -406,7 +406,7 @@ async def oidc_token(
         )
 
     # ── Look up user
-    user = db.get_user_by_id(code_row["user_id"])
+    user = db.find_user_by_id(code_row["user_id"])
     if not user:
         return JSONResponse(
             {"error": "server_error",

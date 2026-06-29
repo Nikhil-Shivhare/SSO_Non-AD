@@ -59,6 +59,11 @@ echo "▶️  Starting SAML App (App E) (port 3005)..."
 (cd "SAML App (App E)" && node app.js > /tmp/app5.log 2>&1 &)
 sleep 2
 
+# Start OIDC App F
+echo "▶️  Starting OIDC App (App F) (port 3006)..."
+(cd "OIDC App (App F)" && node app.js > /tmp/app6.log 2>&1 &)
+sleep 2
+
 echo ""
 echo "✅ All services started!"
 echo ""
@@ -83,6 +88,7 @@ check_service 3002 "Session + CSRF App (App B)"
 check_service 3003 "Stateless App (App C)"
 check_service 3004 "Role-based login App (App D)"
 check_service 3005 "SAML App (App E)"
+check_service 3006 "OIDC App (App F)"
 check_service 3100 "Launcher"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -95,6 +101,7 @@ echo "   - Session + CSRF App (App B): /tmp/app2.log"
 echo "   - Stateless App (App C): /tmp/app3.log"
 echo "   - Role-based login App (App D): /tmp/app4.log"
 echo "   - SAML App (App E): /tmp/app5.log"
+echo "   - OIDC App (App F): /tmp/app6.log"
 echo "   - Launcher: /tmp/launcher.log"
 echo ""
 echo "🔍 To view logs: tail -f /tmp/primary-identity.log"
