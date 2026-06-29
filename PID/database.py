@@ -104,6 +104,33 @@ def init_database():
             created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
             updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
         );
+
+        -- OIDC Client registry (Relying Party registrations)
+        CREATE TABLE IF NOT EXISTS oidc_clients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_id TEXT UNIQUE NOT NULL,
+            client_secret TEXT NOT NULL,
+            name TEXT NOT NULL,
+            redirect_uris TEXT NOT NULL,  -- JSON-encoded list of allowed redirect URIs
+            enabled INTEGER DEFAULT 1,
+            created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+            updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+        );
+
+        -- OIDC Authorization Code store (single-use, short TTL)
+        CREATE TABLE IF NOT EXISTS oidc_authorization_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            client_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            redirect_uri TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            nonce TEXT,                   -- echoed back as id_token nonce claim; NULL if client omitted
+            expires_at INTEGER NOT NULL,
+            used INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
     """)
 
     # ── Migrate existing saml_service_providers if name_id_format column is missing
@@ -1005,4 +1032,150 @@ def seed_saml_sp_if_missing():
             conn.commit()
             print("[DB] Back-filled App E SAML Service Provider in apps table")
         print("[DB] SAML SP for App E already exists")
+    conn.close()
+
+
+# --------------------------------------------------------------------------
+# OIDC CLIENT FUNCTIONS
+# --------------------------------------------------------------------------
+
+def get_oidc_client(client_id: str) -> dict | None:
+    """Return an enabled OIDC client record by client_id, or None."""
+    conn = _get_db()
+    row = conn.execute(
+        "SELECT * FROM oidc_clients WHERE client_id = ? AND enabled = 1",
+        (client_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return None
+    record = dict(row)
+    # Deserialize redirect_uris from JSON
+    try:
+        record["redirect_uris"] = json.loads(record["redirect_uris"])
+    except (json.JSONDecodeError, TypeError):
+        record["redirect_uris"] = [record["redirect_uris"]]
+    return record
+
+
+def verify_oidc_client_secret(client_id: str, client_secret: str) -> bool:
+    """Return True if client_id + client_secret match a registered client."""
+    conn = _get_db()
+    row = conn.execute(
+        "SELECT client_secret FROM oidc_clients WHERE client_id = ? AND enabled = 1",
+        (client_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return False
+    return secrets.compare_digest(row["client_secret"], client_secret)
+
+
+# --------------------------------------------------------------------------
+# OIDC AUTHORIZATION CODE FUNCTIONS
+# --------------------------------------------------------------------------
+
+def create_oidc_authorization_code(
+    code: str,
+    client_id: str,
+    user_id: int,
+    redirect_uri: str,
+    scope: str,
+    nonce: str | None,
+    expires_at: int,
+) -> None:
+    """Insert a new OIDC authorization code row."""
+    conn = _get_db()
+    conn.execute(
+        """
+        INSERT INTO oidc_authorization_codes
+            (code, client_id, user_id, redirect_uri, scope, nonce, expires_at, used)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+        """,
+        (code, client_id, user_id, redirect_uri, scope, nonce, expires_at),
+    )
+    conn.commit()
+    conn.close()
+
+
+def consume_oidc_authorization_code(code: str) -> dict | None:
+    """
+    Look up an authorization code. Returns the row dict if valid (not expired, not used).
+    Marks the code as used=1 immediately (single-use enforcement).
+    Returns None if the code is unknown, expired, or already used.
+    """
+    conn = _get_db()
+    row = conn.execute(
+        "SELECT * FROM oidc_authorization_codes WHERE code = ?",
+        (code,),
+    ).fetchone()
+
+    if not row:
+        conn.close()
+        return None
+
+    if row["used"]:
+        conn.close()
+        print(f"[OIDC-DB] Authorization code already used: {code[:8]}...")
+        return None
+
+    if int(time.time()) > row["expires_at"]:
+        # Clean up expired code
+        conn.execute("DELETE FROM oidc_authorization_codes WHERE id = ?", (row["id"],))
+        conn.commit()
+        conn.close()
+        print(f"[OIDC-DB] Authorization code expired: {code[:8]}...")
+        return None
+
+    # Mark as used immediately
+    conn.execute(
+        "UPDATE oidc_authorization_codes SET used = 1 WHERE id = ?",
+        (row["id"],),
+    )
+    conn.commit()
+    conn.close()
+    return dict(row)
+
+
+def cleanup_expired_oidc_codes() -> None:
+    """Delete expired authorization codes (call periodically or on startup)."""
+    conn = _get_db()
+    conn.execute(
+        "DELETE FROM oidc_authorization_codes WHERE expires_at < ? OR used = 1",
+        (int(time.time()),),
+    )
+    conn.commit()
+    conn.close()
+
+
+def seed_oidc_client_if_missing() -> None:
+    """Seed the App F OIDC client row if not already present (idempotent)."""
+    conn = _get_db()
+    existing = conn.execute(
+        "SELECT id FROM oidc_clients WHERE client_id = ?",
+        ("app_f",),
+    ).fetchone()
+
+    if not existing:
+        now = int(time.time())
+        redirect_uris_json = json.dumps(["http://localhost:3006/callback"])
+        conn.execute(
+            """
+            INSERT INTO oidc_clients
+                (client_id, client_secret, name, redirect_uris, enabled, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 1, ?, ?)
+            """,
+            (
+                "app_f",
+                "app_f_secret_development_only",
+                "App F OIDC Demo",
+                redirect_uris_json,
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        print("[DB] Seeded App F OIDC client")
+    else:
+        print("[DB] OIDC client for App F already exists")
     conn.close()

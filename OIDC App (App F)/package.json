@@ -1,0 +1,14 @@
+{
+  "name": "app-f-oidc",
+  "version": "1.0.0",
+  "description": "Minimal OIDC Relying Party demo app for SSO testing",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "openid-client": "^4.9.1",
+    "express": "^4.18.2",
+    "express-session": "^1.19.0"
+  }
+}

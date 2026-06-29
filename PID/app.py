@@ -30,12 +30,16 @@ from slowapi.errors import RateLimitExceeded
 import database as db
 import vault_client
 import saml_idp
+from oidc_provider import oidc_router  # Phase 3: OIDC provider routes
 
 # ============================================================================
 # APP SETUP
 # ============================================================================
 
 app = FastAPI(title="Primary Identity Service", docs_url=None, redoc_url=None)
+
+# OIDC provider routes (must be registered before any wildcard routes)
+app.include_router(oidc_router)
 
 # Session middleware — cookie name MUST be PID_SESSION for extension compatibility
 app.add_middleware(
@@ -142,7 +146,9 @@ def update_extension_manifest(origin: str, action: str = "add") -> bool:
 async def startup():
     """Initialize the database and check Vault health on startup."""
     db.init_database()
-    db.seed_saml_sp_if_missing()  # Ensure App E SAML SP is registered
+    db.seed_saml_sp_if_missing()       # Ensure App E SAML SP is registered
+    db.seed_oidc_client_if_missing()   # Ensure App F OIDC client is registered
+    db.cleanup_expired_oidc_codes()    # Clean up any leftover codes from previous runs
 
     # Check Vault Service health (warn-only, don't crash PID)
     vault_healthy = await vault_client.health_check()
@@ -255,15 +261,22 @@ async def login_submit(request: Request, username: str = Form(...), password: st
             "request": request, "title": "Login", "error": "Your account has been deactivated. Contact an administrator."
         })
 
-    # Capture pending SAML state BEFORE clearing/rebuilding session
-    # (Starlette signed-cookie sessions: must capture before session.clear())
-    pending_saml = request.session.get("pending_saml_request")
+    # Capture BOTH pending states BEFORE session.clear()
+    # (Starlette signed-cookie sessions: data is lost after clear())
+    pending_saml = request.session.get("pending_saml_request")   # existing SAML hook
+    pending_oidc = request.session.get("pending_oidc_request")   # OIDC hook
 
-    # Create session (clear first to prevent session fixation)
+    # Create fresh session (clear first to prevent session fixation)
     request.session.clear()
     request.session["userId"]   = user["id"]
     request.session["username"] = user["username"]
     request.session["role"]     = user["role"]
+
+    # OIDC resume takes priority (only one pending flow at a time in practice)
+    if pending_oidc:
+        request.session["pending_oidc_request"] = pending_oidc
+        print(f"[OIDC] Post-login: pending OIDC request found, resuming for {user['username']}")
+        return RedirectResponse(url="/oidc/resume", status_code=302)
 
     # Restore pending SAML state into the fresh authenticated session
     if pending_saml:
