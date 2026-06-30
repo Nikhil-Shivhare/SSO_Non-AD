@@ -260,7 +260,35 @@ async def oidc_authorize(request: Request):
     username = request.session.get("username")
 
     if user_id and username:
-        # Logged in — issue code immediately
+        # Logged in — check authorization first
+        if not db.is_user_allowed_app(int(user_id), client_id):
+            print(f"[OIDC] Access Denied: User {username!r} is not assigned to {client_id}")
+            app_name = client.get("name") if client else client_id
+            html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>Access Denied</title>
+    <style>
+        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f7fa; color: #333; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
+        .card {{ background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 450px; border-top: 4px solid #e74c3c; }}
+        h1 {{ color: #e74c3c; font-size: 24px; margin-top: 0; }}
+        p {{ font-size: 15px; line-height: 1.6; color: #555; }}
+        .btn {{ display: inline-block; margin-top: 20px; padding: 10px 20px; background-color: #3498db; color: white; text-decoration: none; border-radius: 4px; font-weight: 600; }}
+        .btn:hover {{ background-color: #2980b9; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Access Denied</h1>
+        <p>You are not authorized or assigned to access the application <strong>{app_name}</strong>.</p>
+        <p>Please contact your administrator to request access.</p>
+        <a href="/dashboard" class="btn">Return to Dashboard</a>
+    </div>
+</body>
+</html>"""
+            return HTMLResponse(content=html, status_code=403)
+
+        # Authorized — issue code
         code = generate_authorization_code(
             client_id=client_id,
             user_id=int(user_id),
@@ -332,6 +360,35 @@ async def oidc_resume(request: Request):
             {"error": "invalid_redirect_uri", "error_description": "redirect_uri mismatch"},
             status_code=400,
         )
+
+    # ── Check authorization before generating code
+    if not db.is_user_allowed_app(int(user_id), client_id):
+        del request.session["pending_oidc_request"]
+        print(f"[OIDC] Access Denied in /oidc/resume: User {username!r} is not assigned to {client_id}")
+        app_name = client.get("name") if client else client_id
+        html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>Access Denied</title>
+    <style>
+        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f7fa; color: #333; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
+        .card {{ background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 450px; border-top: 4px solid #e74c3c; }}
+        h1 {{ color: #e74c3c; font-size: 24px; margin-top: 0; }}
+        p {{ font-size: 15px; line-height: 1.6; color: #555; }}
+        .btn {{ display: inline-block; margin-top: 20px; padding: 10px 20px; background-color: #3498db; color: white; text-decoration: none; border-radius: 4px; font-weight: 600; }}
+        .btn:hover {{ background-color: #2980b9; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Access Denied</h1>
+        <p>You are not authorized or assigned to access the application <strong>{app_name}</strong>.</p>
+        <p>Please contact your administrator to request access.</p>
+        <a href="/dashboard" class="btn">Return to Dashboard</a>
+    </div>
+</body>
+</html>"""
+        return HTMLResponse(content=html, status_code=403)
 
     # ── Generate code (nonce propagated through the chain: session → DB → JWT)
     code = generate_authorization_code(
