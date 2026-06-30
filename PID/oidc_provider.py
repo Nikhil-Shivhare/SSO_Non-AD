@@ -86,9 +86,21 @@ def generate_authorization_code(
     return code
 
 
-def _build_id_token(user_id: int, username: str, nonce: str | None, scope: str) -> str:
+def _build_id_token(
+    user_id: int,
+    username: str,
+    nonce: str | None,
+    scope: str,
+    client_id: str,
+    client_secret: str,
+) -> str:
     """
     Build and sign an HS256 ID Token JWT.
+
+    Per RFC 7518 / OIDC Core §10.1, for HS256 the signing key IS the client_secret.
+    openid-client v4 verifies the ID token using the registered client_secret, so we
+    MUST sign with that value — NOT with the server's own _OIDC_SECRET.
+
     pyjwt gotchas:
       - 'algorithms' kwarg is REQUIRED on decode (we don't call decode here, but note it).
       - 'exp' must be a UTC integer timestamp.
@@ -98,7 +110,7 @@ def _build_id_token(user_id: int, username: str, nonce: str | None, scope: str) 
     payload: dict = {
         "iss": ISSUER,
         "sub": username,               # subject = username (stable identifier)
-        "aud": "app_f",                # audience = client_id
+        "aud": client_id,              # audience = the requesting client_id
         "iat": now,
         "exp": now + TOKEN_TTL,
         "name": username,
@@ -110,7 +122,8 @@ def _build_id_token(user_id: int, username: str, nonce: str | None, scope: str) 
     if "email" in scope:
         payload["email"] = f"{username}@example.local"
 
-    return jwt.encode(payload, _OIDC_SECRET, algorithm="HS256")
+    # Sign with the CLIENT's secret — this is what openid-client will use to verify
+    return jwt.encode(payload, client_secret, algorithm="HS256")
 
 
 def _build_access_token(username: str, scope: str) -> str:
@@ -418,8 +431,26 @@ async def oidc_token(
     scope    = code_row["scope"]
     nonce    = code_row.get("nonce")   # propagated from /authorize → DB → here
 
+    # ── Fetch client record to get its secret (needed to sign the ID token)
+    # Per OIDC spec, for HS256 the id_token MUST be signed with the client_secret
+    # so that the RP (openid-client) can verify it with its own known secret.
+    client_row = db.get_oidc_client(client_id)
+    if not client_row:
+        return JSONResponse(
+            {"error": "server_error",
+             "error_description": "Client disappeared between auth and token exchange"},
+            status_code=500,
+        )
+
     # ── Build tokens
-    id_token     = _build_id_token(user_id=user["id"], username=username, nonce=nonce, scope=scope)
+    id_token = _build_id_token(
+        user_id=user["id"],
+        username=username,
+        nonce=nonce,
+        scope=scope,
+        client_id=client_id,
+        client_secret=client_row["client_secret"],
+    )
     access_token = _build_access_token(username=username, scope=scope)
 
     print(f"[OIDC] /token: issued id_token+access_token for {username!r}")

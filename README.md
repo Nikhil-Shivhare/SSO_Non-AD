@@ -1,8 +1,8 @@
 # 🔐 Non-AD SSO — Multi-Protocol Single Sign-On for Enterprise Apps
 
-> **A dual-mode SSO solution providing modern SAML 2.0 Federation and a browser extension-based Credential Replay for legacy web applications.**
+> **A triple-mode SSO solution providing credential replay for legacy apps, SAML 2.0 federation, and OIDC/JWT-based authentication — all from a central Identity Provider.**
 
-Built as a Proof of Concept to demonstrate how organizations can bring SSO capabilities to both modern SAML-capable apps and legacy web apps **without modifying the legacy apps themselves**.
+Built as a Proof of Concept to demonstrate how organizations can bring SSO capabilities to legacy web apps, enterprise SAML apps, and modern OIDC-aware applications **without modifying the apps themselves**.
 
 ---
 
@@ -100,10 +100,10 @@ All credentials are stored centrally in a **Primary Identity Service** (credenti
 │  │  manifest.json  ──  Permissions, content script matches        │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
 │                                                                        │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ │
-│  │ App-A (:3001)│ │ App-B (:3002)│ │ App-C (:3003)│ │ App-D (:3004)│ │ App-E (:3005)│ │
-│  │ Session-based│ │ Session+CSRF │ │ Stateless    │ │ Role-based   │ │ SAML 2.0 SP  │ │
-│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘ │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ │
+│  │ App-A (:3001)│ │ App-B (:3002)│ │ App-C (:3003)│ │ App-D (:3004)│ │ App-E (:3005)│ │ App-F (:3006)│ │
+│  │ Session-based│ │ Session+CSRF │ │ Stateless    │ │ Role-based   │ │ SAML 2.0 SP  │ │ OIDC RP      │ │
+│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘ │
 │                                                                        │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
 │  │ LAUNCHER (Port 3100) — Navigation UI to launch all apps        │  │
@@ -124,6 +124,7 @@ SSO_Non-AD/
 │   ├── database.py                # SQLite setup, queries, password policy
 │   ├── vault_client.py            # Async Vault HTTP proxy client
 │   ├── saml_idp.py                # SAML 2.0 Identity Provider implementation
+│   ├── oidc_provider.py           # OIDC 1.0 Identity Provider implementation
 │   ├── certs/                     # SAML signing certificate and key
 │   │   ├── dev-idp.crt            # Public certificate (embedded in IdP metadata)
 │   │   └── dev-idp.key            # Private key (used to sign assertions)
@@ -169,6 +170,11 @@ SSO_Non-AD/
 │   ├── package.json
 │   └── README.md              # App E documentation
 │
+├── OIDC App (App F)/          # Demo: OIDC Relying Party (port 3006)
+│   ├── app.js                 # Express server with openid-client
+│   ├── package.json
+│   └── README.md              # App F documentation
+│
 ├── launcher/                  # App launcher UI (port 3100)
 │   └── app.js                 # Simple Express server with navigation links
 │
@@ -197,6 +203,8 @@ SSO_Non-AD/
 | CSRF Protection   | csurf (App-B)                     |
 | SAML IdP (PID)    | signxml + lxml (assertion signing) |
 | SAML SP (App E)   | @node-saml/node-saml + express-session |
+| OIDC Provider (PID) | pyjwt + cryptography (HS256 JWT signing) |
+| OIDC Client (App F) | openid-client@4 + express-session |
 
 ---
 
@@ -222,6 +230,7 @@ cd "Session + CSRF App (App B)" && npm install && cd ..
 cd "Stateless App (App C)" && npm install && cd ..
 cd "Role-based login App (App D)" && npm install && cd ..
 cd "SAML App (App E)" && npm install && cd ..
+cd "OIDC App (App F)" && npm install && cd ..
 cd launcher && npm install && cd ..
 ```
 
@@ -231,7 +240,7 @@ cd launcher && npm install && cd ..
 ./start-all.sh
 ```
 
-This starts all 8 services:
+This starts all 9 services:
 
 | Service                       | URL                     | Port |
 | ----------------------------- | ----------------------- | ---- |
@@ -242,6 +251,7 @@ This starts all 8 services:
 | Stateless App (App C)         | http://localhost:3003   | 3003 |
 | Role-based login App (App D)  | http://localhost:3004   | 3004 |
 | SAML App (App E)              | http://localhost:3005   | 3005 |
+| OIDC App (App F)              | http://localhost:3006   | 3006 |
 | Launcher                      | http://localhost:3100   | 3100 |
 
 ### 3. Install the Browser Extension
@@ -271,6 +281,15 @@ This starts all 8 services:
 4. After PID login, you are automatically redirected back to App E dashboard
 5. You are logged into App E without ever entering a password in App E ✅
 
+#### OIDC Federated SSO (App F)
+
+1. **Open App F directly**: http://localhost:3006/login
+2. Click **"Login with PID OIDC SSO"**
+3. If not logged into PID, you will be redirected to PID login (`testuser` / `TestPass123!`)
+4. After PID login, PID redirects back to App F with an authorization code
+5. App F exchanges the code for tokens (ID Token JWT + Access Token)
+6. You are logged into App F without ever entering a password in App F ✅
+
 ### Stop All Services
 
 ```bash
@@ -281,7 +300,7 @@ This starts all 8 services:
 
 ## 🖥 Demo Applications
 
-Five demo apps simulate different real-world legacy and modern authentication scenarios:
+Seven demo apps simulate different real-world legacy and modern authentication scenarios:
 
 | App     | Port | Auth Type              | Challenge for SSO                                    |
 | ------- | ---- | ---------------------- | ---------------------------------------------------- |
@@ -290,6 +309,7 @@ Five demo apps simulate different real-world legacy and modern authentication sc
 | App-C   | 3003 | Stateless (no session) | Login required on every page refresh                 |
 | App-D   | 3004 | Role-based login       | Extra field (role dropdown) beyond username/password |
 | App-E   | 3005 | SAML 2.0 SP            | Cryptographic validation, IdP trust, InResponseTo state |
+| App-F   | 3006 | OIDC Relying Party     | JWT token validation, authorization code exchange     |
 | picoCTF | N/A  | Third-Party React SPA  | Dynamic form rendering, synthetic React events       |
 
 ### Demo User Accounts
@@ -403,6 +423,7 @@ Access at: http://localhost:4000/admin (login as `admin` / `admin123`)
 - Assign apps to users
 - View all credential mappings
 - **Register and manage SAML Service Providers** (SAML Apps tab)
+- **Register and manage OIDC Clients** (OIDC Clients tab)
 
 ### Database Tables
  
@@ -414,6 +435,8 @@ Access at: http://localhost:4000/admin (login as `admin` / `admin123`)
 | `plugin_tokens`     | Extension authentication tokens (token, user_id, scopes, expires_at)    |
 | `vault_credentials` | Per-user per-app credentials (app_username, app_password, extra_fields) |
 | `saml_service_providers` | Registered SAML SP configurations (id, name, entity_id, acs_url, name_id_format, enabled) |
+| `oidc_clients` | Registered OIDC client configurations (client_id, client_secret, redirect_uris, enabled) |
+| `oidc_authorization_codes` | Short-lived OIDC authorization codes (single-use, with nonce for replay protection) |
 
 ---
 
@@ -493,6 +516,16 @@ Updating:    Extension  →  PUT  /api/vault/password      →  SQLite vault_cre
 | GET | `/saml/metadata` | None | Returns IdP XML metadata |
 | GET/POST | `/saml/sso` | Session | Accepts SAML AuthnRequest, redirects to login if needed |
 | GET | `/saml/resume` | Session | Resumes SAML flow after successful login |
+
+### OIDC Identity Provider APIs (PID)
+
+| Method | Endpoint | Auth | Description |
+| ------ | -------- | ---- | ----------- |
+| GET | `/.well-known/openid-configuration` | None | OIDC discovery document |
+| GET | `/.well-known/jwks.json` | None | JWKS (empty for HS256 MVP) |
+| GET | `/authorize` | Session | Authorization endpoint (Authorization Code flow) |
+| POST | `/token` | Client credentials | Token endpoint — exchanges code for JWT tokens |
+| GET | `/userinfo` | Bearer token | Returns user claims from access token |
 
 ### Bootstrap Response Example
 
@@ -646,7 +679,7 @@ User visits App-E → Clicks "Login with SAML"
     ├──► App-E generates SAML AuthnRequest → Redirects to PID /saml/sso
     │
     ├──► PID validates request → Checks if user is logged in
-    │       └── If NO: Redirects to /login?saml_resume=1
+    │       └── If NO: Redirects to /login (resume hook restores SAML state)
     │       └── If YES: Generates SAMLResponse
     │
     ├──► PID signs SAML Assertion (RSA-SHA256)
@@ -655,6 +688,33 @@ User visits App-E → Clicks "Login with SAML"
     │
     └──► App-E verifies signature, InResponseTo, and Issuer
             └── Login successful ✅
+```
+
+### Flow 7: OIDC Federated SSO (App F)
+
+```text
+User visits App-F → Clicks "Login with OIDC"
+    │
+    ├──► App-F redirects to PID /authorize (Authorization Code flow)
+    │
+    ├──► PID validates request → Checks if user is logged in
+    │       └── If NO: Stores pending OIDC state → Redirects to /login (resume hook restores OIDC state)
+    │       └── If YES: Generates authorization code
+    │
+    ├──► PID redirects back to App-F /callback with ?code=AUTH_CODE
+    │
+    ├──► App-F POSTs code + client_secret to PID /token
+    │
+    ├──► PID returns {
+    │       id_token: "<HS256 JWT>",
+    │       access_token: "<HS256 JWT>",
+    │       token_type: "Bearer",
+    │       expires_in: 3600
+    │     }
+    │
+    ├──► App-F verifies ID Token signature and claims (iss, aud, exp, nonce)
+    │
+    └──► App-F creates local session → Dashboard ✅
 ```
 
 ---
@@ -687,6 +747,7 @@ User visits App-E → Clicks "Login with SAML"
 - ✅ **User Activation/Deactivation** — admin can disable users without deleting them; deactivated users are blocked from login and all tokens are revoked immediately
 - ✅ **Admin Password Reset** — admin can reset any user's password from the admin panel; password policy is enforced, and all tokens are revoked to force re-login
 - ✅ **SAML Security** — RSA-SHA256 assertion signing, strict `InResponseTo` validation, and replay protection
+- ✅ **OIDC Security** — HS256 JWT signing, authorization code single-use, short TTL, client_secret_post authentication, `nonce` replay protection, exact redirect_uri matching
 
 ---
 
@@ -716,6 +777,18 @@ User visits App-E → Clicks "Login with SAML"
 - [ ] Support for iframed login forms
 - [ ] Cross-browser support (Firefox, Edge)
 
+### OIDC Roadmap (Post-MVP)
+
+- [ ] Migrate JWT signing from HS256 to RS256 with key rotation
+- [ ] Add PKCE (Proof Key for Code Exchange) for public clients
+- [ ] Add refresh token support with rotation
+- [ ] Add token revocation and introspection endpoints
+- [ ] Add consent screen for OIDC authorization
+- [ ] Add per-client scope restrictions
+- [ ] Add Admin UI for OIDC client management
+- [ ] Support additional OIDC flows (implicit, hybrid)
+- [ ] Add JWT token encryption (JWE)
+
 ---
 
 ## 📊 Useful Commands
@@ -734,6 +807,12 @@ sqlite3 PID/database.sqlite "SELECT * FROM plugin_tokens;"
 
 # View SAML Service Providers
 sqlite3 PID/database.sqlite "SELECT * FROM saml_service_providers;"
+
+# View OIDC Clients
+sqlite3 PID/database.sqlite "SELECT * FROM oidc_clients;"
+
+# View OIDC Authorization Codes
+sqlite3 PID/database.sqlite "SELECT * FROM oidc_authorization_codes;"
 ```
 
 ### View Logs
@@ -745,6 +824,7 @@ tail -f /tmp/app2.log               # Session + CSRF App (App B)
 tail -f /tmp/app3.log               # Stateless App (App C)
 tail -f /tmp/app4.log               # Role-based login App (App D)
 tail -f /tmp/app5.log               # SAML App (App E)
+tail -f /tmp/app6.log               # OIDC App (App F)
 ```
 
 ### Manage Services

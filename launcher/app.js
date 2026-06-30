@@ -106,11 +106,21 @@ app.get('/', (req, res) => {
             <a href="http://localhost:3005/login" target="_blank" style="background:#1e3a5f;">Launch App E (SAML)</a>
             <a href="http://localhost:3005/saml/metadata" target="_blank" style="background:#555; margin-left:6px;">SP Metadata</a>
         </div>
+
+        <div class="app-item" style="border-left-color:#764ba2;">
+            <h3>App F &mdash; OIDC Federated SSO &#128272;</h3>
+            <p>
+                OpenID Connect (OIDC) Relying Party &mdash; delegates authentication to the PID Identity Provider.<br>
+                <strong>No username/password in App F</strong>: login is federated via OIDC Authorization Code flow (HS256).
+            </p>
+            <a href="http://localhost:3006/login" target="_blank" style="background:#764ba2;">Launch App F (OIDC)</a>
+        </div>
     </div>
 
     <div class="note">
         <strong>Credential Replay SSO (Apps A-D):</strong> Chrome extension + PID vault replays credentials to legacy apps that cannot be modified.<br><br>
-        <strong>SAML Federated SSO (App E):</strong> PID acts as SAML 2.0 Identity Provider. App E is a Service Provider that trusts signed PID assertions &mdash; no password prompt in App E after PID login.
+        <strong>SAML Federated SSO (App E):</strong> PID acts as SAML 2.0 Identity Provider. App E is a Service Provider that trusts signed PID assertions &mdash; no password prompt in App E after PID login.<br><br>
+        <strong>OIDC Federated SSO (App F):</strong> PID acts as OpenID Provider. App F is a Relying Party that validates ID Token JWT and fetches UserInfo &mdash; no password prompt in App F after PID login.
     </div>
 </body>
 </html>
