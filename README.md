@@ -133,7 +133,7 @@ SSO_Non-AD/
 │   │   ├── base.html              # Shared layout
 │   │   ├── login.html             # Login page
 │   │   ├── dashboard.html         # User dashboard
-│   │   └── admin.html             # Admin panel (users, apps, password policy, SAML SPs)
+│   │   └── admin.html             # Admin panel (users, apps, password policy, SAML SPs, OIDC Clients)
 │   ├── venv/                      # Python virtual environment
 │   └── requirements.txt           # Python dependencies
 │
@@ -435,7 +435,7 @@ Access at: http://localhost:4000/admin (login as `admin` / `admin123`)
 | `plugin_tokens`     | Extension authentication tokens (token, user_id, scopes, expires_at)    |
 | `vault_credentials` | Per-user per-app credentials (app_username, app_password, extra_fields) |
 | `saml_service_providers` | Registered SAML SP configurations (id, name, entity_id, acs_url, name_id_format, enabled) |
-| `oidc_clients` | Registered OIDC client configurations (client_id, client_secret, redirect_uris, enabled) |
+| `oidc_clients` | Registered OIDC Relying Party configurations (id, client_id, client_secret, redirect_uris JSON list, enabled) |
 | `oidc_authorization_codes` | Short-lived OIDC authorization codes (single-use, with nonce for replay protection) |
 
 ---
@@ -785,7 +785,6 @@ User visits App-F → Clicks "Login with OIDC"
 - [ ] Add token revocation and introspection endpoints
 - [ ] Add consent screen for OIDC authorization
 - [ ] Add per-client scope restrictions
-- [ ] Add Admin UI for OIDC client management
 - [ ] Support additional OIDC flows (implicit, hybrid)
 - [ ] Add JWT token encryption (JWE)
 

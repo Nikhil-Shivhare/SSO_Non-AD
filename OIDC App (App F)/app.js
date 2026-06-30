@@ -114,69 +114,77 @@ app.get("/login", (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>App F — OIDC Login</title>
+  <title>Accops Workspace — OIDC Login</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+      background-color: #f3f4f6;
+      color: #1f2937;
     }
     .card {
-      background: rgba(255,255,255,0.05);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 16px;
-      padding: 48px 40px;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 40px;
       text-align: center;
       width: 400px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+    .brand-logo {
+      font-size: 24px;
+      font-weight: 700;
+      color: #1e3a8a;
+      margin-bottom: 8px;
     }
     .badge {
       display: inline-block;
-      background: linear-gradient(90deg, #667eea, #764ba2);
-      color: #fff;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 1px;
+      background-color: #dbeafe;
+      color: #1e40af;
+      font-size: 11px;
+      font-weight: 600;
       text-transform: uppercase;
-      border-radius: 20px;
-      padding: 4px 14px;
-      margin-bottom: 24px;
+      letter-spacing: 0.5px;
+      border-radius: 9999px;
+      padding: 4px 12px;
+      margin-bottom: 20px;
     }
-    h1 { color: #fff; font-size: 28px; margin-bottom: 8px; }
-    p  { color: rgba(255,255,255,0.55); font-size: 14px; margin-bottom: 36px; }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 8px; color: #111827; }
+    p  { color: #6b7280; font-size: 14px; margin-bottom: 30px; line-height: 1.5; }
     .btn-oidc {
       display: block;
       width: 100%;
-      padding: 14px;
-      background: linear-gradient(90deg, #667eea, #764ba2);
-      color: #fff;
-      font-size: 15px;
+      padding: 12px;
+      background-color: #2563eb;
+      color: #ffffff;
+      font-size: 14px;
       font-weight: 600;
       text-decoration: none;
-      border-radius: 10px;
-      transition: opacity 0.2s, transform 0.1s;
+      border-radius: 6px;
+      border: none;
+      transition: background-color 0.2s;
     }
-    .btn-oidc:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn-oidc:hover { background-color: #1d4ed8; }
     .note {
       margin-top: 24px;
       font-size: 12px;
-      color: rgba(255,255,255,0.35);
+      color: #9ca3af;
     }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="badge">OIDC Federated SSO</div>
-    <h1>App F</h1>
-    <p>No username or password needed here.<br>Authentication is federated to PID via OIDC.</p>
-    <a href="/oidc/login" class="btn-oidc" id="btn-oidc-login">🔐 Login with PID OIDC SSO</a>
+    <div class="brand-logo">Accops Workspace</div>
+    <div class="badge">Single Sign-On</div>
+    <h1>Enterprise Login</h1>
+    <p>Authentication for Accops internal tools is centralized via OpenID Connect (OIDC).</p>
+    <a href="/oidc/login" class="btn-oidc" id="btn-oidc-login">🔐 Log in with Accops SSO</a>
     <div class="note">
-      Authorization Code flow &bull; HS256 &bull; PID Identity Provider
+      OIDC Authorization Code Flow &bull; Secure HS256
     </div>
   </div>
 </body>
@@ -269,94 +277,249 @@ app.get("/dashboard", requireAppFSession, (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>App F — Dashboard</title>
+  <title>Accops Workspace — Dashboard</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f3f4f6;
+      color: #1f2937;
       min-height: 100vh;
-      background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+    }
+    .navbar {
+      background-color: #ffffff;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 14px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .navbar-brand {
+      font-size: 18px;
+      font-weight: 700;
+      color: #1e3a8a;
+    }
+    .user-profile {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 14px;
+    }
+    .user-profile span {
+      color: #4b5563;
+    }
+    .btn-logout-nav {
+      padding: 6px 12px;
+      background-color: #f3f4f6;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      color: #374151;
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 12px;
+      transition: background-color 0.2s;
+    }
+    .btn-logout-nav:hover {
+      background-color: #e5e7eb;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 40px auto;
+      padding: 0 24px;
+    }
+    .welcome-banner {
+      background-color: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .welcome-banner h1 {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #111827;
+    }
+    .welcome-banner p {
+      font-size: 14px;
+      color: #6b7280;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 768px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .card {
+      background-color: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: #111827;
+      border-bottom: 1px solid #f3f4f6;
+      padding-bottom: 8px;
+    }
+    .service-item {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 12px 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .service-item:last-child {
+      border-bottom: none;
+    }
+    .service-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 6px;
+      background-color: #eff6ff;
       display: flex;
       align-items: center;
       justify-content: center;
+      color: #2563eb;
+      font-size: 18px;
+      font-weight: bold;
     }
-    .card {
-      background: rgba(255,255,255,0.07);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 16px;
-      padding: 48px 40px;
-      width: 480px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    .service-info {
+      flex: 1;
     }
-    .badge {
-      display: inline-block;
-      background: linear-gradient(90deg, #43e97b, #38f9d7);
-      color: #0f0c29;
+    .service-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 2px;
+    }
+    .service-desc {
       font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      border-radius: 20px;
-      padding: 4px 14px;
-      margin-bottom: 24px;
+      color: #6b7280;
     }
-    h1 { color: #fff; font-size: 26px; margin-bottom: 28px; }
+    .btn-launch {
+      padding: 6px 12px;
+      background-color: #2563eb;
+      color: #ffffff;
+      border: none;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .btn-launch:hover {
+      background-color: #1d4ed8;
+    }
     .info-row {
       display: flex;
       justify-content: space-between;
-      padding: 12px 0;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-      font-size: 14px;
+      padding: 10px 0;
+      border-bottom: 1px solid #f3f4f6;
+      font-size: 13px;
     }
-    .info-row:last-of-type { border-bottom: none; }
-    .info-label { color: rgba(255,255,255,0.45); }
-    .info-value { color: #fff; font-weight: 500; }
-    .btn-logout {
-      display: block;
-      width: 100%;
-      margin-top: 32px;
-      padding: 12px;
-      background: rgba(255,255,255,0.1);
-      color: rgba(255,255,255,0.7);
-      text-align: center;
-      text-decoration: none;
-      border-radius: 10px;
-      font-size: 14px;
-      transition: background 0.2s;
+    .info-row:last-child {
+      border-bottom: none;
     }
-    .btn-logout:hover { background: rgba(255,255,255,0.18); }
+    .info-label {
+      color: #6b7280;
+    }
+    .info-value {
+      color: #374151;
+      font-weight: 500;
+      word-break: break-all;
+    }
   </style>
 </head>
 <body>
-  <div class="card">
-    <div class="badge">✓ OIDC SSO Active</div>
-    <h1>Welcome, ${u.username}!</h1>
-    <div class="info-row">
-      <span class="info-label">Username</span>
-      <span class="info-value">${u.username}</span>
+  <nav class="navbar">
+    <div class="navbar-brand">Accops Workspace</div>
+    <div class="user-profile">
+      <span>👤 ${u.username}</span>
+      <a href="/logout" class="btn-logout-nav" id="btn-logout">Logout</a>
     </div>
-    <div class="info-row">
-      <span class="info-label">Email</span>
-      <span class="info-value">${u.email}</span>
+  </nav>
+
+  <div class="container">
+    <div class="welcome-banner">
+      <h1>Welcome to Accops Secure Portal</h1>
+      <p>Your session is managed and secured using Single Sign-On (OIDC).</p>
     </div>
-    <div class="info-row">
-      <span class="info-label">Subject (sub)</span>
-      <span class="info-value">${u.sub}</span>
+
+    <div class="grid">
+      <!-- Main services column -->
+      <div>
+        <div class="card">
+          <h2 class="card-title">Available Applications & Services</h2>
+          
+          <div class="service-item">
+            <div class="service-icon">📁</div>
+            <div class="service-info">
+              <div class="service-name">Accops File Share</div>
+              <div class="service-desc">Secure enterprise storage and document collaboration platform.</div>
+            </div>
+            <button class="btn-launch" onclick="alert('Accessing Accops File Share...')">Launch</button>
+          </div>
+
+          <div class="service-item">
+            <div class="service-icon">🖥️</div>
+            <div class="service-info">
+              <div class="service-name">Virtual Desktop Access (VDA)</div>
+              <div class="service-desc">Connect to your secure remote corporate desktop environment.</div>
+            </div>
+            <button class="btn-launch" onclick="alert('Launching Virtual Desktop...')">Launch</button>
+          </div>
+
+          <div class="service-item">
+            <div class="service-icon">🎫</div>
+            <div class="service-info">
+              <div class="service-name">Accops Support Desk</div>
+              <div class="service-desc">Create support tickets, view documentation, and request access.</div>
+            </div>
+            <button class="btn-launch" onclick="alert('Opening Support Desk...')">Open</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Technical OIDC details column -->
+      <div>
+        <div class="card">
+          <h2 class="card-title">OIDC Session Details</h2>
+          
+          <div class="info-row">
+            <span class="info-label">User ID (sub)</span>
+            <span class="info-value">${u.sub}</span>
+          </div>
+
+          <div class="info-row">
+            <span class="info-label">Email</span>
+            <span class="info-value">${u.email}</span>
+          </div>
+
+          <div class="info-row">
+            <span class="info-label">OIDC Issuer</span>
+            <span class="info-value" style="font-size:11px;">${u.issuer}</span>
+          </div>
+
+          <div class="info-row">
+            <span class="info-label">Auth Method</span>
+            <span class="info-value">${u.loginMethod}</span>
+          </div>
+
+          <div class="info-row">
+            <span class="info-label">Login Time</span>
+            <span class="info-value" style="font-size:11px;">${loginTime}</span>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="info-row">
-      <span class="info-label">Issuer</span>
-      <span class="info-value">${u.issuer}</span>
-    </div>
-    <div class="info-row">
-      <span class="info-label">Login Method</span>
-      <span class="info-value">${u.loginMethod}</span>
-    </div>
-    <div class="info-row">
-      <span class="info-label">Session Since</span>
-      <span class="info-value">${loginTime}</span>
-    </div>
-    <a href="/logout" class="btn-logout" id="btn-logout">Logout from App F</a>
   </div>
 </body>
 </html>
