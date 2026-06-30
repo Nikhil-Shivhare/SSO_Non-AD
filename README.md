@@ -698,8 +698,10 @@ User visits App-F → Clicks "Login with OIDC"
     ├──► App-F redirects to PID /authorize (Authorization Code flow)
     │
     ├──► PID validates request → Checks if user is logged in
-    │       └── If NO: Stores pending OIDC state → Redirects to /login (resume hook restores OIDC state)
-    │       └── If YES: Generates authorization code
+    │       ├── If NO: Stores pending OIDC state → Redirects to /login (resume hook restores OIDC state)
+    │       └── If YES: Checks user authorization (is_user_allowed_app)
+    │             ├── If authorized: Generates authorization code
+    │             └── If denied: Returns 403 Access Denied page
     │
     ├──► PID redirects back to App-F /callback with ?code=AUTH_CODE
     │
@@ -747,7 +749,7 @@ User visits App-F → Clicks "Login with OIDC"
 - ✅ **User Activation/Deactivation** — admin can disable users without deleting them; deactivated users are blocked from login and all tokens are revoked immediately
 - ✅ **Admin Password Reset** — admin can reset any user's password from the admin panel; password policy is enforced, and all tokens are revoked to force re-login
 - ✅ **SAML Security** — RSA-SHA256 assertion signing, strict `InResponseTo` validation, and replay protection
-- ✅ **OIDC Security** — HS256 JWT signing, authorization code single-use, short TTL, client_secret_post authentication, `nonce` replay protection, exact redirect_uri matching
+- ✅ **OIDC Security** — HS256 JWT signing, authorization code single-use, short TTL, client_secret_post authentication, `nonce` replay protection, exact redirect_uri matching, and runtime user-to-app authorization checks (`is_user_allowed_app`)
 
 ---
 
