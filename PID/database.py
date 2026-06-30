@@ -428,6 +428,11 @@ def get_all_apps() -> list[dict]:
             sp = conn.execute("SELECT name, enabled FROM saml_service_providers WHERE entity_id = ?", (app["appId"],)).fetchone()
             app["name"] = sp["name"] if sp else app["appId"]
             app["enabled"] = bool(sp["enabled"]) if sp else True
+        elif schema == "OIDC":
+            app["schema_type"] = "OIDC"
+            client = conn.execute("SELECT name, enabled FROM oidc_clients WHERE client_id = ?", (app["appId"],)).fetchone()
+            app["name"] = client["name"] if client else app["appId"]
+            app["enabled"] = bool(client["enabled"]) if client else True
         else:
             app["schema_type"] = "Role-based" if "role" in schema else "Standard"
             app["name"] = app["appId"]
@@ -481,11 +486,14 @@ def delete_app(app_id: str) -> dict:
         if app_row["login_schema"] == "SAML":
             # Delete from saml_service_providers table as well!
             conn.execute("DELETE FROM saml_service_providers WHERE entity_id = ?", (app_id,))
+        elif app_row["login_schema"] == "OIDC":
+            # Delete from oidc_clients table as well!
+            conn.execute("DELETE FROM oidc_clients WHERE client_id = ?", (app_id,))
 
         conn.execute("DELETE FROM user_apps WHERE app_id = ?", (app_row["id"],))
         conn.execute("DELETE FROM apps WHERE appId = ?", (app_id,))
         conn.commit()
-        print(f"[DB] Deleted app (and potential SAML SP): {app_id}")
+        print(f"[DB] Deleted app (and potential SAML/OIDC record): {app_id}")
         return {"success": True}
     finally:
         conn.close()
@@ -511,6 +519,11 @@ def get_user_apps(user_id: int) -> list[dict]:
             sp = conn.execute("SELECT name, enabled FROM saml_service_providers WHERE entity_id = ?", (app["appId"],)).fetchone()
             app["name"] = sp["name"] if sp else app["appId"]
             app["enabled"] = bool(sp["enabled"]) if sp else True
+        elif schema == "OIDC":
+            app["schema_type"] = "OIDC"
+            client = conn.execute("SELECT name, enabled FROM oidc_clients WHERE client_id = ?", (app["appId"],)).fetchone()
+            app["name"] = client["name"] if client else app["appId"]
+            app["enabled"] = bool(client["enabled"]) if client else True
         else:
             app["schema_type"] = "Role-based" if "role" in schema else "Standard"
             app["name"] = app["appId"]
@@ -1178,4 +1191,163 @@ def seed_oidc_client_if_missing() -> None:
         print("[DB] Seeded App F OIDC client")
     else:
         print("[DB] OIDC client for App F already exists")
+
+    # Fix seed inconsistency: ensure app_f also exists in the apps table
+    # (older DB files created before this fix will be missing this row)
+    app_exists = conn.execute("SELECT id FROM apps WHERE appId = ?", ("app_f",)).fetchone()
+    if not app_exists:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO apps (appId, origin, login_schema, login_url, logout_url, password_url)
+            VALUES (?, ?, 'OIDC', '', '', '')
+            """,
+            ("app_f", "http://localhost:3006")
+        )
+        # Assign to testuser so they can access App F immediately
+        test_user = conn.execute("SELECT id FROM users WHERE username = ?", ("testuser",)).fetchone()
+        app_row = conn.execute("SELECT id FROM apps WHERE appId = ?", ("app_f",)).fetchone()
+        if test_user and app_row:
+            conn.execute(
+                "INSERT OR IGNORE INTO user_apps (user_id, app_id) VALUES (?, ?)",
+                (test_user["id"], app_row["id"])
+            )
+        conn.commit()
+        print("[DB] Back-filled App F entry in apps table (seed fix)")
     conn.close()
+
+
+# --------------------------------------------------------------------------
+# OIDC CLIENT CRUD (Admin)
+# --------------------------------------------------------------------------
+
+def get_all_oidc_clients() -> list[dict]:
+    """Return all OIDC client records (enabled + disabled), ordered by name."""
+    conn = _get_db()
+    rows = conn.execute("SELECT * FROM oidc_clients ORDER BY name").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def add_oidc_client(
+    name: str,
+    client_id: str,
+    client_secret: str,
+    redirect_uris: str,  # raw JSON string from form
+    enabled: bool = True,
+) -> dict:
+    """Register a new OIDC client. Returns {ok} or {error}.
+
+    Mirrors add_saml_sp: also inserts a row into the apps table so the client
+    appears in get_all_apps() and user-assignment dropdowns immediately.
+    """
+    # Validate redirect_uris JSON
+    try:
+        uris_list = json.loads(redirect_uris)
+        if not isinstance(uris_list, list) or not uris_list:
+            return {"error": "redirect_uris must be a non-empty JSON array"}
+    except (json.JSONDecodeError, TypeError):
+        return {"error": "redirect_uris is not valid JSON"}
+
+    # Derive origin from first redirect URI
+    try:
+        origin = "/".join(uris_list[0].split("/", 3)[:3])
+    except Exception:
+        origin = uris_list[0]
+
+    conn = _get_db()
+    try:
+        now = int(time.time())
+        conn.execute(
+            """
+            INSERT INTO oidc_clients
+                (client_id, client_secret, name, redirect_uris, enabled, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (client_id, client_secret, name, redirect_uris, 1 if enabled else 0, now, now),
+        )
+        # Sync to apps table (INSERT OR IGNORE so it is safe if row already exists)
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO apps (appId, origin, login_schema, login_url, logout_url, password_url)
+            VALUES (?, ?, 'OIDC', '', '', '')
+            """,
+            (client_id, origin),
+        )
+        conn.commit()
+        print(f"[DB] Registered OIDC client: {client_id} ({name})")
+        return {"ok": True}
+    except Exception as e:
+        err = str(e)
+        if "UNIQUE" in err.upper():
+            return {"error": f"Client ID already registered: {client_id}"}
+        return {"error": err}
+    finally:
+        conn.close()
+
+
+def update_oidc_client(
+    client_id: str,
+    name: str,
+    client_secret: str,
+    redirect_uris: str,  # raw JSON string from form
+    enabled: bool = True,
+) -> dict:
+    """Update an existing OIDC client. client_id is immutable. Returns {ok} or {error}."""
+    # Validate redirect_uris JSON
+    try:
+        uris_list = json.loads(redirect_uris)
+        if not isinstance(uris_list, list) or not uris_list:
+            return {"error": "redirect_uris must be a non-empty JSON array"}
+    except (json.JSONDecodeError, TypeError):
+        return {"error": "redirect_uris is not valid JSON"}
+
+    try:
+        origin = "/".join(uris_list[0].split("/", 3)[:3])
+    except Exception:
+        origin = uris_list[0]
+
+    conn = _get_db()
+    try:
+        now = int(time.time())
+        cur = conn.execute(
+            """
+            UPDATE oidc_clients
+               SET name = ?, client_secret = ?, redirect_uris = ?, enabled = ?, updated_at = ?
+             WHERE client_id = ?
+            """,
+            (name, client_secret, redirect_uris, 1 if enabled else 0, now, client_id),
+        )
+        if cur.rowcount == 0:
+            return {"error": f"OIDC client not found: {client_id}"}
+        # Propagate new origin to apps table
+        conn.execute(
+            "UPDATE apps SET origin = ? WHERE appId = ?",
+            (origin, client_id),
+        )
+        conn.commit()
+        print(f"[DB] Updated OIDC client: {client_id}")
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        conn.close()
+
+
+def delete_oidc_client(client_id: str) -> dict:
+    """Permanently delete an OIDC client and all related rows. Returns {ok} or {error}."""
+    conn = _get_db()
+    try:
+        app_row = conn.execute("SELECT id FROM apps WHERE appId = ?", (client_id,)).fetchone()
+        if app_row:
+            conn.execute("DELETE FROM user_apps WHERE app_id = ?", (app_row["id"],))
+            conn.execute("DELETE FROM apps WHERE appId = ?", (client_id,))
+        cur = conn.execute("DELETE FROM oidc_clients WHERE client_id = ?", (client_id,))
+        conn.commit()
+        if cur.rowcount == 0:
+            return {"error": f"OIDC client not found: {client_id}"}
+        print(f"[DB] Deleted OIDC client: {client_id}")
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        conn.close()

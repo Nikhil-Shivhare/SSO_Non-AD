@@ -366,6 +366,7 @@ async def admin_panel(request: Request, message: str = "", error: str = ""):
     }
 
     saml_sps = db.get_all_saml_sps()
+    oidc_clients = db.get_all_oidc_clients()
 
     return templates.TemplateResponse("admin.html", {
         "request": request,
@@ -381,6 +382,7 @@ async def admin_panel(request: Request, message: str = "", error: str = ""):
         "active_sessions": active_sessions,
         "system_info": system_info,
         "saml_sps": saml_sps,
+        "oidc_clients": oidc_clients,
     })
 
 
@@ -642,6 +644,96 @@ async def admin_delete_saml_sp(request: Request, sp_id: int):
     else:
         err = result.get("error", "Unknown error")
         return RedirectResponse(url=f"/admin?error={urllib.parse.quote(err)}#saml-apps", status_code=302)
+
+
+# ============================================================================
+# OIDC CLIENT ADMIN ROUTES
+# ============================================================================
+
+# POST /admin/oidc-clients — Register a new OIDC client
+@app.post("/admin/oidc-clients")
+async def admin_add_oidc_client(
+    request: Request,
+    name: str = Form(...),
+    client_id: str = Form(...),
+    client_secret: str = Form(...),
+    redirect_uris: str = Form(...),
+    enabled: str = Form("0"),
+):
+    """Register a new OIDC Relying Party (admin only)."""
+    session_user = get_session_user(request)
+    if not session_user or session_user["role"] != "admin":
+        raise HTTPException(status_code=403)
+
+    form_data = await request.form()
+    is_enabled = "enabled" in form_data
+
+    result = db.add_oidc_client(
+        name=name.strip(),
+        client_id=client_id.strip(),
+        client_secret=client_secret.strip(),
+        redirect_uris=redirect_uris.strip(),
+        enabled=is_enabled,
+    )
+    if result.get("ok"):
+        msg = f"OIDC client '{name}' registered successfully."
+        print(f"[ADMIN] Registered OIDC client: {client_id}")
+        return RedirectResponse(url=f"/admin?message={urllib.parse.quote(msg)}#oidc-apps", status_code=302)
+    else:
+        err = result.get("error", "Unknown error")
+        return RedirectResponse(url=f"/admin?error={urllib.parse.quote(err)}#oidc-apps", status_code=302)
+
+
+# POST /admin/oidc-clients/{client_id}/update — Edit an existing OIDC client
+@app.post("/admin/oidc-clients/{client_id}/update")
+async def admin_update_oidc_client(
+    request: Request,
+    client_id: str,
+    name: str = Form(...),
+    client_secret: str = Form(...),
+    redirect_uris: str = Form(...),
+    enabled: str = Form("0"),
+):
+    """Update an OIDC Relying Party (admin only). client_id is immutable."""
+    session_user = get_session_user(request)
+    if not session_user or session_user["role"] != "admin":
+        raise HTTPException(status_code=403)
+
+    form_data = await request.form()
+    is_enabled = "enabled" in form_data
+
+    result = db.update_oidc_client(
+        client_id=client_id.strip(),
+        name=name.strip(),
+        client_secret=client_secret.strip(),
+        redirect_uris=redirect_uris.strip(),
+        enabled=is_enabled,
+    )
+    if result.get("ok"):
+        msg = f"OIDC client '{name}' updated successfully."
+        print(f"[ADMIN] Updated OIDC client: {client_id}")
+        return RedirectResponse(url=f"/admin?message={urllib.parse.quote(msg)}#oidc-apps", status_code=302)
+    else:
+        err = result.get("error", "Unknown error")
+        return RedirectResponse(url=f"/admin?error={urllib.parse.quote(err)}#oidc-apps", status_code=302)
+
+
+# POST /admin/oidc-clients/{client_id}/delete — Hard delete an OIDC client
+@app.post("/admin/oidc-clients/{client_id}/delete")
+async def admin_delete_oidc_client(request: Request, client_id: str):
+    """Permanently delete an OIDC Relying Party (admin only)."""
+    session_user = get_session_user(request)
+    if not session_user or session_user["role"] != "admin":
+        raise HTTPException(status_code=403)
+
+    result = db.delete_oidc_client(client_id.strip())
+    if result.get("ok"):
+        msg = "OIDC client deleted permanently."
+        print(f"[ADMIN] Deleted OIDC client: {client_id}")
+        return RedirectResponse(url=f"/admin?message={urllib.parse.quote(msg)}#oidc-apps", status_code=302)
+    else:
+        err = result.get("error", "Unknown error")
+        return RedirectResponse(url=f"/admin?error={urllib.parse.quote(err)}#oidc-apps", status_code=302)
 
 
 # POST /admin/password-policy — Update password policy

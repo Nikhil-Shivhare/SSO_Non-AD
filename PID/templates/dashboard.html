@@ -142,6 +142,9 @@
                      {% if app.schema_type == 'SAML' %}
                      <span class="badge" style="background:#e8f8f5; color:#117a65; border:1px solid #a3e4d7;">SAML</span>
                      <a href="{{ app.origin }}" target="_blank" class="btn-open">Open App →</a>
+                     {% elif app.schema_type == 'OIDC' %}
+                     <span class="badge" style="background:#f5eef8; color:#8e44ad; border:1px solid #d5b9d5;">OIDC</span>
+                     <a href="{{ app.origin }}" target="_blank" class="btn-open">Open App →</a>
                      {% else %}
                      <span class="badge" style="background:#f8f9fa; color:#6c757d; border:1px solid #dee2e6;">{{ app.schema_type }}</span>
                      <a href="{{ app.login_url or (app.origin + '/login') }}" target="_blank" class="btn-open">Open App →</a>
