@@ -129,16 +129,7 @@ Separating the credential store from Primary Identity (PID) into a dedicated Vau
 
 ---
 
-## The Role of SAML (Bypassing the Vault)
 
-The introduction of **SAML 2.0 Federated SSO** creates a parallel authentication path that **does not use the Vault Service**. 
-
-*   **Credential Replay (Extension):** Relies on the Vault Service to retrieve plaintext (or decrypted) passwords to inject into legacy DOMs.
-*   **SAML Federated SSO:** Relies purely on the user's active session cookie in the PID. Once the user is logged into the PID, the PID generates a cryptographically signed XML Assertion and sends it to the Service Provider (e.g., App E).
-
-Because SAML relies on cryptographic trust rather than password replay, the Vault Service is completely uninvolved in the SAML authentication flow. The PID stores SAML configuration in its local `saml_service_providers` table.
-
----
 
 ## Data Ownership Table
 
@@ -443,18 +434,57 @@ PID validates before proxying to Vault
 
 🔹 Table: saml_service_providers
 
-| Column     | Type    | Constraints      | Description                                 |
-| ---------- | ------- | ---------------- | ------------------------------------------- |
-| id         | INTEGER | PK AUTOINCREMENT | SP ID                                       |
-| name       | TEXT    | NOT NULL         | Human-readable name                         |
-| entity_id  | TEXT    | UNIQUE NOT NULL  | SAML Entity ID (Issuer)                     |
-| acs_url    | TEXT    | NOT NULL         | Assertion Consumer Service URL              |
-| x509cert   | TEXT    |                  | Public cert for signed requests (optional)  |
-| enabled    | BOOLEAN | DEFAULT 1        | Feature flag                                |
+| Column         | Type    | Constraints      | Description                                                |
+| -------------- | ------- | ---------------- | ---------------------------------------------------------- |
+| id             | INTEGER | PK AUTOINCREMENT | SP ID                                                      |
+| name           | TEXT    | NOT NULL         | Human-readable name                                        |
+| entity_id      | TEXT    | UNIQUE NOT NULL  | SAML Entity ID (Issuer)                                    |
+| acs_url        | TEXT    | NOT NULL         | Assertion Consumer Service URL                            |
+| name_id_format | TEXT    | DEFAULT ...      | NameID format choice (e.g. unspecified)                    |
+| enabled        | INTEGER | DEFAULT 1        | Feature flag (1 = enabled, 0 = disabled)                   |
+| created_at     | INTEGER | NOT NULL         | Creation Unix timestamp                                    |
+| updated_at     | INTEGER | NOT NULL         | Last update Unix timestamp                                 |
 
 Purpose:
-Stores SAML SP metadata
-PID validates AuthnRequests against this table
+Stores SAML SP metadata.
+PID validates AuthnRequests against this table.
+
+
+🔹 Table: oidc_clients
+
+| Column        | Type    | Constraints      | Description                                       |
+| ------------- | ------- | ---------------- | ------------------------------------------------- |
+| id            | INTEGER | PK AUTOINCREMENT | Client ID (Primary Key)                           |
+| client_id     | TEXT    | UNIQUE NOT NULL  | OIDC Client ID (e.g. `app_f`)                     |
+| client_secret | TEXT    | NOT NULL         | Shared HMAC-SHA256 client secret                  |
+| name          | TEXT    | NOT NULL         | Human-readable client name                        |
+| redirect_uris | TEXT    | NOT NULL         | JSON array of allowed redirection URIs            |
+| enabled       | INTEGER | DEFAULT 1        | Feature flag (1 = enabled, 0 = disabled)          |
+| created_at    | INTEGER | NOT NULL         | Creation Unix timestamp                           |
+| updated_at    | INTEGER | NOT NULL         | Last update Unix timestamp                        |
+
+Purpose:
+Stores OIDC Relying Party (client) metadata.
+PID validates authorize/token requests against this table.
+
+
+🔹 Table: oidc_authorization_codes
+
+| Column       | Type    | Constraints      | Description                                       |
+| ------------ | ------- | ---------------- | ------------------------------------------------- |
+| id           | INTEGER | PK AUTOINCREMENT | Code ID                                           |
+| code         | TEXT    | UNIQUE NOT NULL  | Opaque single-use authorization code string       |
+| client_id    | TEXT    | NOT NULL         | Target Client ID                                  |
+| user_id      | INTEGER | FK → users.id    | Authenticated User ID                             |
+| redirect_uri | TEXT    | NOT NULL         | Redirect URI used in `/authorize`                 |
+| scope        | TEXT    | NOT NULL         | Scope string requested by client                  |
+| nonce        | TEXT    |                  | Cryptographic nonce to embed in ID Token (or NULL)|
+| expires_at   | INTEGER | NOT NULL         | Expiry Unix timestamp (typically 5 mins TTL)      |
+| used         | INTEGER | DEFAULT 0        | Single-use flag (1 = consumed, 0 = active)        |
+| created_at   | INTEGER | NOT NULL         | Creation Unix timestamp                           |
+
+Purpose:
+Temporarily stores issued OIDC authorization codes. Enforces single-use consumption.
 
 
 🟩 2️⃣ VAULT DATABASE (Postgres Primary + Replica)
@@ -513,3 +543,295 @@ Demo compliance
 | apps.appId     | vault_credentials.app_id   | App mapping      |
 
 
+
+
+
+
+
+
+
+## The Role of SAML (Bypassing the Vault)
+
+The introduction of **SAML 2.0 Federated SSO** creates a parallel authentication path that **does not use the Vault Service**. 
+
+*   **Credential Replay (Extension):** Relies on the Vault Service to retrieve plaintext (or decrypted) passwords to inject into legacy DOMs.
+*   **SAML Federated SSO:** Relies purely on the user's active session cookie in the PID. Once the user is logged into the PID, the PID generates a cryptographically signed XML Assertion and sends it to the Service Provider (e.g., App E).
+
+Because SAML relies on cryptographic trust rather than password replay, the Vault Service is completely uninvolved in the SAML authentication flow. The PID stores SAML configuration in its local `saml_service_providers` table.
+
+---
+
+## SAML 2.0 Federated SSO Architecture
+
+While Credential Replay injects credentials into the DOM of unmodified legacy apps, **SAML 2.0 Federated SSO** establishes direct cryptographic trust between the Primary Identity Service (PID) acting as the **Identity Provider (IdP)** and standard-compliant applications acting as **Service Providers (SPs)**. 
+
+No passwords or credentials are stored or replayed to the SP; instead, the browser carries a cryptographically signed XML Assertion confirming the user's identity.
+
+### SAML SSO Target Architecture
+
+```
+                                BROWSER
+                                   │
+       1. Access App E             │ 3. Redirect to PID /saml/sso with AuthnRequest
+     ┌─────────────────────────────┼─────────────────────────────┐
+     │                             │                             │
+     ▼                             ▼                             ▼
+┌────────────────────────┐  2. Gen Request ID  ┌────────────────────────┐
+│   SAML SERVICE         ├────────────────────►│    PRIMARY IDENTITY    │
+│   PROVIDER (SP)        │                     │     SERVICE (PID)      │
+│  (App E - Port 3005)   │  4. Validate ACS    │     (IdP - Port 4000)  │
+│                        │     & Issuer        │                        │
+│  - Generates Request ID│◄────────────────────┤ - Decodes & Parses XML │
+│  - Caches Request ID   │                     │ - Validates SP EntityID│
+│  - Validates XML Signature                   │ - Verifies user session│
+│  - Handles ACS URL     │  7. Auto-POST Form  │ - Signs Assertion      │
+│                        │◄────────────────────┤ - Renders POST Form    │
+└──────────┬─────────────┘                     └───────────┬────────────┘
+           │                                               │
+           │                                               │ 5. Lookup SP ACS
+           │                                               ▼
+           │                                           ┌────────┐
+           │                                           │ SQLite │
+           │                                           │   DB   │
+           │                                           └────────┘
+           │ 6. Create Local Session
+           ▼
+    [App E Dashboard]
+```
+
+### Call Flow: SP-Initiated SAML SSO
+
+This sequence details how a user logs into SAML App E using their active PID session:
+
+```
+Browser                     App E (SP)                      PID (IdP)                      SQLite DB
+   │                            │                               │                              │
+   │─── 1. Access App E ───────►│                               │                              │
+   │                            ├─── 2. Generate AuthnRequest   │                              │
+   │                            │    & cache Request ID         │                              │
+   │                            │                               │                              │
+   │◄── 3. Redirect to IdP ─────┤                               │                              │
+   │    with SAMLRequest        │                               │                              │
+   │    (HTTP-Redirect)         │                               │                              │
+   │                            │                               │                              │
+   │─── 4. GET /saml/sso ───────┼──────────────────────────────►│                              │
+   │    with SAMLRequest        │                               ├── 5. Decode & Parse          │
+   │                            │                               │      AuthnRequest            │
+   │                            │                               ├── 6. SELECT sp info ────────►│
+   │                            │                               │◄──── Return entity_id/acs ───┤
+   │                            │                               │                              │
+   │                            │                               ├── 7. Validate ACS & Issuer   │
+   │                            │                               │                              │
+   │                            │                               ├── 8. Check PID_SESSION       │
+   │                            │                               │                              │
+   │                            │                               │    [If Not Logged In]        │
+   │◄── 9a. Redirect to /login ─┼───────────────────────────────┤                              │
+   │                            │                               │                              │
+   │─── 9b. POST /login ────────┼──────────────────────────────►│                              │
+   │    (with credentials)      │                               ├── 9c. Authenticate User      │
+   │                            │                               ├── 9d. Restore pending SAML   │
+   │◄── 9e. Redirect to resume ─┼───────────────────────────────┤                              │
+   │                            │                               │                              │
+   │─── 10. GET /saml/resume ───┼──────────────────────────────►│                              │
+   │                            │                               ├── 11. Build SAMLResponse XML │
+   │                            │                               │       using lxml             │
+   │                            │                               ├── 12. Sign Assertion with    │
+   │                            │                               │       dev-idp.key (signxml)  │
+   │                            │                               ├── 13. Clear pending SAML     │
+   │                            │                               │                              │
+   │◄── 14. HTML Auto-POST form ┼───────────────────────────────┤                              │
+   │                            │                               │                              │
+   │─── 15. POST /saml/acs ────►│                               │                              │
+   │    with SAMLResponse       ├── 16. Validate response:      │                              │
+   │                            │       - Signature check       │                              │
+   │                            │       - Issuer & Audience     │                              │
+   │                            │       - InResponseTo cache    │                              │
+   │                            │       - Clock skew/expiry     │                              │
+   │                            │                               │                              │
+   │                            ├── 17. Create App E Session    │                              │
+   │◄── 18. Redirect /dashboard ┤                               │                              │
+```
+
+### Technical Detail & Implementation Components
+
+#### 1. AuthnRequest Decoding and Parsing
+*   **Protocol Binding**: HTTP-Redirect (GET).
+*   **Decompression Pipeline**: The framework query-parser automatically URL-decodes the `SAMLRequest` string. PID then base64-decodes and decompresses the raw DEFLATE bytes (using negative window bits to bypass the zlib header):
+    ```python
+    zlib.decompress(base64.b64decode(raw_saml_request), -zlib.MAX_WBITS)
+    ```
+*   **Parsing**: Built using `lxml.etree` to extract the `ID` attribute, the `<saml:Issuer>` text, and the `<samlp:AuthnRequest>` attribute `AssertionConsumerServiceURL`.
+
+#### 2. Service Provider Registration & ACS Injection Protection
+To prevent malicious redirection of SAML responses (ACS URL Injection), the PID IdP strictly validates requests using a registered list of Service Providers stored in its SQLite database:
+*   The SP's `Issuer` (Entity ID) is queried against `saml_service_providers`. If not found or disabled, PID rejects the request with a `403 Forbidden`.
+*   The ACS URL is loaded directly from the database record (`acs_url`) rather than trusting the ACS URL specified in the incoming XML payload.
+
+#### 3. State Preservation & Cookie Size Safety
+*   When an unauthenticated user arrives with a valid SAML request, PID redirects them to `/login`.
+*   To keep the user's flow context, the incoming SAML metadata (`request_id`, `issuer`, `acs_url`, `relay_state`) is saved to the session.
+*   **Cookie size limitation**: Raw XML is never placed in the session because Starlette signed-cookie sessions have a 4KB limit. Doing so causes silent session write failures.
+*   Upon successful login, a post-login handler checks for `pending_saml_request`, restores it to the newly initialized session, and routes the browser to `/saml/resume` to complete the assertion generation.
+
+#### 4. SAML Assertion Construction & Standalone XML Signing
+PID generates and signs only the `<saml:Assertion>` element inside an unsigned `<samlp:Response>` envelope. This matches standard enterprise-level assertions:
+*   **Libraries**: Built using `lxml` for structured XML nodes and signed using `signxml.XMLSigner`.
+*   **Enveloped Assertion-Only Signing**:
+    1. The assertion element is created and temporarily detached from the main response.
+    2. `XMLSigner` signs the assertion standalone with the IdP private key (`dev-idp.key`), embedding a `<ds:Signature>` element as the first child of the assertion.
+    3. The signer is explicitly configured with `id_attribute_name="ID"` to bind the signature reference to the Assertion's ID attribute.
+    4. The signed assertion element is re-attached as a child of the response.
+*   **Validity Window**: The assertion is set with a short Time-To-Live (`assertion_ttl_seconds = 300` / 5 minutes) and a clock skew tolerance (`clock_skew_seconds = 120` / 2 minutes) under `<saml:Conditions>`.
+
+#### 5. HTTP-POST Auto-Submission Form
+The base64-encoded `SAMLResponse` is sent to the SP ACS URL using the HTTP-POST binding. The PID returns a self-submitting HTML page that triggers standard JavaScript execution:
+```html
+<body onload="document.forms[0].submit()">
+  <form id="saml-form" method="POST" action="{acs_url}">
+    <input type="hidden" name="SAMLResponse" value="{saml_response_b64}">
+    <input type="hidden" name="RelayState" value="{relay_state}">
+  </form>
+</body>
+```
+
+#### 6. Service Provider ACS Verification
+When the browser submits the POST request to App E's `/saml/acs` endpoint:
+*   **CSRF Exclusion**: The endpoint is excluded from CSRF middleware checks. Cryptographic checks alone are sufficient to verify cross-origin POST authenticity.
+*   **Validation Checks**: App E utilizes `@node-saml/node-saml` to validate the assertion:
+    *   **Signature**: Validates signature using the IdP's public cert (`dev-idp.crt`).
+    *   **InResponseTo**: Compares the response `InResponseTo` against the original `AuthnRequest` ID generated by App E. The library manages this automatically using its internal request cache.
+    *   **Audience/Recipient**: Verifies that Audience matches App E Entity ID and Recipient matches App E ACS URL.
+    *   **Expiry**: Validates timestamps against clock skew.
+*   Upon validation, App E starts a local express session and redirects the user to `/dashboard`.
+
+---
+
+## OpenID Connect (OIDC) Federated SSO Architecture
+
+While SAML 2.0 uses XML-based assertions and HTTP-POST/HTTP-Redirect bindings, **OIDC Federated SSO** is a lightweight, JSON/JWT-centric federated authentication protocol built on top of OAuth 2.0. In this configuration, the **Primary Identity Service (PID)** acts as the **OpenID Provider (OP)**, and **App F** (running on port 3006) acts as the **Relying Party (RP)** or OIDC Client.
+
+Like SAML, the OIDC flow bypasses the Vault Service completely, relying on central PID sessions and cryptographic tokens to establish trust.
+
+### OIDC SSO Target Architecture
+
+```
+                                BROWSER
+                                   │
+       1. Access App F             │ 3. Redirect to PID /authorize with params
+     ┌─────────────────────────────┼─────────────────────────────┐
+     │                             │                             │
+     ▼                             ▼                             ▼
+┌────────────────────────┐  2. Gen state/nonce ┌────────────────────────┐
+│   OIDC CLIENT / RP     ├────────────────────►│  OPENID PROVIDER (OP)  │
+│  (App F - Port 3006)   │                     │     (PID - Port 4000)  │
+│                        │  4. Validate Client │                        │
+│  - Generates State &   │     & Redirect URI  │ - Authenticates User   │
+│    Nonce               │◄────────────────────┤ - Generates Auth Code  │
+│  - Persists State &    │                     │ - Returns Auth Code    │
+│    Nonce in session    │  5. callback?code   │                        │
+│                        │◄────────────────────┤                        │
+│  - Server-side POST to │                     └───────────┬────────────┘
+│    /token with secret  │                                 │
+│  - Validates ID Token  ├──────────────────────────────┐  │ 6. Lookup Client /
+│    (HS256 signature,   │   6. POST /token             │  │    Verify Code
+│     claims, nonce)     │◄─────────────────────────────┘  ▼
+└────────────────────────┘                             ┌────────┐
+                                                       │ SQLite │
+                                                       │   DB   │
+                                                       └────────┘
+```
+
+### Call Flow: SP-Initiated OIDC SSO (Authorization Code Flow)
+
+This sequence details how a user logs into App F using their active PID session via the Authorization Code Flow:
+
+```
+Browser                     App F (RP)                      PID (OP)                       SQLite DB
+   │                            │                               │                              │
+   │─── 1. Access App F ───────►│                               │                              │
+   │                            ├─── 2. Generate state, nonce   │                              │
+   │                            │    & save to session          │                              │
+   │                            │                               │                              │
+   │◄── 3. Redirect to OP ──────┤                               │                              │
+   │    with state/nonce        │                               │                              │
+   │    (HTTP-Redirect)         │                               │                              │
+   │                            │                               │                              │
+   │─── 4. GET /authorize ──────┼──────────────────────────────►│                              │
+   │    with query parameters   │                               ├── 5. Validate client_id &    │
+   │                            │                               │      redirect_uri            │
+   │                            │                               ├── 6. SELECT Client Info ────►│
+   │                            │                               │◄──── Return client record ───┤
+   │                            │                               │                              │
+   │                            │                               ├── 7. Check PID_SESSION       │
+   │                            │                               │                              │
+   │                            │                               │    [If Not Logged In]        │
+   │◄── 8a. Redirect to /login ─┼───────────────────────────────┤                              │
+   │                            │                               │                              │
+   │─── 8b. POST /login ────────┼──────────────────────────────►│                              │
+   │    (with credentials)      │                               ├── 8c. Authenticate User      │
+   │                            │                               ├── 8d. Restore pending OIDC   │
+   │◄── 8e. Redirect to resume ─┼───────────────────────────────┤                              │
+   │                            │                               │                              │
+   │─── 9. GET /oidc/resume ────┼──────────────────────────────►│                              │
+   │                            │                               ├── 10. Generate Auth Code     │
+   │                            │                               ├── 11. Save code & nonce ────►│
+   │                            │                               ├── 12. Clear pending OIDC     │
+   │                            │                               │                              │
+   │◄── 13. Redirect to Callback┼───────────────────────────────┤                              │
+   │    with ?code=CODE&state   │                               │                              │
+   │                            │                               │                              │
+   │─── 14. GET /callback ─────►│                               │                              │
+   │    with code & state       │                               │                              │
+   │                            ├── 15. Check state matches     │                              │
+   │                            │       session value           │                              │
+   │                            │                               │                              │
+   │                            ├── 16. POST /token (back-channel) ───────────────────────────►│
+   │                            │       (code, client_id, client_secret)                       │
+   │                            │                               ├── 17. Validate credentials & │
+   │                            │                               │       verify & consume code  │
+   │                            │                               ├── 18. Build ID Token & Access│
+   │                            │◄────── 19. Return Tokens ─────┤                              │
+   │                            │        (Access + ID Token)    │                              │
+   │                            │                               │                              │
+   │                            ├── 20. Verify ID Token:        │                              │
+   │                            │       - HS256 signature       │                              │
+   │                            │       - issuer & audience     │                              │
+   │                            │       - nonce matches session │                              │
+   │                            │       - exp/iat time check    │                              │
+   │                            │                               │                              │
+   │                            ├── 21. Create App F Session    │                              │
+   │◄── 22. Redirect /dashboard ┤                               │                              │
+```
+
+### Technical Detail & Implementation Components
+
+#### 1. Discovery and JWKS Endpoints
+*   **Discovery Document**: PID implements `GET /.well-known/openid-configuration` (RFC 8414). This JSON metadata allows clients like App F to auto-discover token, authorization, and userinfo endpoints, supported scopes, and signing algorithms.
+*   **JWKS Endpoint**: Located at `GET /.well-known/jwks.json`. For the MVP, PID signs JWTs using symmetric HS256 (HMAC-SHA256).
+    *   **JWKS Security**: An empty `{"keys": []}` array is returned. Publishing symmetric secrets publicly is insecure. The client verifies signatures using the registered `client_secret` directly as the HMAC verification key.
+
+#### 2. Client Authentication & Token Signing (HS256)
+*   **Signing Key Strategy**: Following OIDC Core §10.1, when signing JWTs via symmetric `HS256`, the signing key is the UTF-8 bytes of the `client_secret` registered for that specific client.
+*   **Token Endpoint Authentication**: App F authenticates to PID's `/token` endpoint using the `client_secret_post` method, sending credentials (`client_id` and `client_secret`) directly in the HTTP POST body.
+*   **ID Token JWT Claims**: Signed using `pyjwt` with the client's secret, containing:
+    *   `iss`: Identity Provider issuer URL (`http://localhost:4000`)
+    *   `sub`: Stable username identifier
+    *   `aud`: Client ID (`app_f`)
+    *   `nonce`: Echoed cryptographic nonce matching the request parameter
+    *   `name` / `preferred_username` / `email` (synthetic for scope profile/email)
+*   **Access Token JWT Claims**: Issued as a separate short-lived JWT signed using the provider's internal secret (`_OIDC_SECRET`) for use at `/userinfo`.
+
+#### 3. State & Nonce Handling on Relying Party (App F)
+*   **Generation**: App F uses `openid-client`'s `generators.state()` and `generators.nonce()` to generate random cryptographic strings before redirecting the browser.
+*   **Session Persistence**: Because the `openid-client` library does not persist state across redirects, App F must manually save `oidc_state` and `oidc_nonce` in the express session.
+*   **Local Session Cookie Constraints**: On HTTP localhost, the Express session cookie's `secure` flag MUST be set to `false`. If set to `true`, the browser will discard the session cookie, resulting in lost state/nonce data and a "checks.state argument is missing" error.
+
+#### 4. Authorization Code Lifecycle & Security
+*   **Single-Use Enforcement**: Issued codes are stored in the SQLite `oidc_authorization_codes` table with a short TTL (5 minutes). When `/token` is called, the code is queried, checked for expiration, and immediately marked as `used = 1`. Any subsequent attempt to use the same code is rejected.
+*   **Redirect URI Validation**: To prevent Open Redirector vulnerabilities, the `redirect_uri` sent to `/authorize` must exactly match the list of allowed URIs registered in the `redirect_uris` JSON field of `oidc_clients`.
+
+#### 5. UserInfo Endpoint Authentication
+*   **Bearer Auth**: The `GET /userinfo` endpoint requires an `Authorization: Bearer <access_token>` header.
+*   **Inline Verification**: PID decodes the Bearer token (issued as a JWT) using its internal secret `_OIDC_SECRET`. This validates scope and identity without querying the database, reducing database load.
+
+---
